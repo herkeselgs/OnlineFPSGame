@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Duel — Browser FPS</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <canvas id="game-canvas"></canvas>
+
+    <div id="crosshair" class="crosshair"></div>
+
+    <div id="perf-hud" class="perf-hud"></div>
+
+    <div id="lock-overlay" class="lock-overlay">
+      <div class="lock-panel">
+        <h1>Foundry — Movement Test</h1>
+        <p>WASD to move, Space to jump, mouse/trackpad to look.</p>
+        <button id="btn-start" class="btn-primary">Click to Play</button>
+
+        <div class="dev-settings">
+          <label class="row">
+            <span>Look mode</span>
+            <select id="look-mode">
+              <option value="pointer-lock">Pointer lock (click canvas)</option>
+              <option value="drag">Click-and-drag (trackpad friendly)</option>
+            </select>
+          </label>
+          <label class="row">
+            <span>Trackpad acceleration curve</span>
+            <input id="trackpad-toggle" type="checkbox" />
+          </label>
+          <label class="row">
+            <span>Sensitivity <span id="sens-value"></span></span>
+            <input id="sensitivity" type="range" min="0.1" max="3" step="0.05" />
+          </label>
+          <label class="row">
+            <span>Invert Y</span>
+            <input id="invert-y" type="checkbox" />
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
