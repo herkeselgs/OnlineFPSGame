@@ -8,6 +8,7 @@ export interface Settings {
   invertY: boolean;
   aimAssist: boolean;
   aimAssistStrength: number; // 0 - 1
+  masterVolume: number; // 0 - 1
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -18,6 +19,7 @@ export const DEFAULT_SETTINGS: Settings = {
   invertY: false,
   aimAssist: true,
   aimAssistStrength: 0.35,
+  masterVolume: 0.6,
 };
 
 const STORAGE_KEY = "fps-settings";

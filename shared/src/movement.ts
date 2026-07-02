@@ -9,6 +9,7 @@ import {
   MAX_FALL_SPEED,
   MOVE_SPEED,
   PLAYER_HALF_EXTENTS,
+  STEP_HEIGHT,
 } from "./constants.js";
 import { Vec3 } from "./vec.js";
 
@@ -35,6 +36,39 @@ function applyFriction(speed: number, friction: number, dt: number): number {
   if (speed <= 0) return speed;
   const drop = speed * friction * dt;
   return Math.max(speed - drop, 0);
+}
+
+/**
+ * If a horizontal move was blocked, retry it from STEP_HEIGHT higher up —
+ * if THAT clears (no collision at the raised height, on this axis or the
+ * other two), the obstacle is a short step (stair, curb, small ledge) and
+ * we can climb it. Only ever called for grounded players. Returns null if
+ * the obstacle is too tall to step over (or a ceiling blocks the raise
+ * itself, which the same overlap check catches automatically since it
+ * requires genuine clearance on every axis, not just the one being moved).
+ */
+function tryStepUp(
+  position: Vec3,
+  half: Vec3,
+  axis: "x" | "z",
+  delta: number,
+  colliders: readonly BoxCollider[]
+): number | null {
+  const raised: Vec3 = { ...position, y: position.y + STEP_HEIGHT };
+  const result = moveAndResolveAxis(raised, half, 0, axis, delta, colliders);
+  return result.collided ? null : result.position;
+}
+
+/**
+ * After a step-up raises the player, immediately probe downward by the same
+ * amount to snap onto the actual step surface rather than leaving them
+ * floating STEP_HEIGHT above it until gravity slowly catches up over many
+ * ticks (which, combined with "ground stick" gravity, would never actually
+ * happen — they'd float there indefinitely).
+ */
+function settleOntoStep(position: Vec3, half: Vec3, colliders: readonly BoxCollider[]): number {
+  const settle = moveAndResolveAxis(position, half, 0, "y", -STEP_HEIGHT, colliders);
+  return settle.position;
 }
 
 /**
@@ -117,14 +151,42 @@ export function stepPlayerMovement(
 
   // Move + resolve per axis (X, Z horizontal; Y vertical) against static colliders.
   const half = PLAYER_HALF_EXTENTS;
+  let stepped = false;
 
   const rx = moveAndResolveAxis(position, half, velocity.x, "x", velocity.x * dt, colliders);
-  position.x = rx.position;
-  velocity.x = rx.velocity;
+  if (rx.collided && onGround) {
+    const steppedX = tryStepUp(position, half, "x", velocity.x * dt, colliders);
+    if (steppedX !== null) {
+      position.x = steppedX;
+      stepped = true;
+    } else {
+      position.x = rx.position;
+      velocity.x = rx.velocity;
+    }
+  } else {
+    position.x = rx.position;
+    velocity.x = rx.velocity;
+  }
 
   const rz = moveAndResolveAxis(position, half, velocity.z, "z", velocity.z * dt, colliders);
-  position.z = rz.position;
-  velocity.z = rz.velocity;
+  if (rz.collided && onGround) {
+    const steppedZ = tryStepUp(position, half, "z", velocity.z * dt, colliders);
+    if (steppedZ !== null) {
+      position.z = steppedZ;
+      stepped = true;
+    } else {
+      position.z = rz.position;
+      velocity.z = rz.velocity;
+    }
+  } else {
+    position.z = rz.position;
+    velocity.z = rz.velocity;
+  }
+
+  if (stepped) {
+    position.y += STEP_HEIGHT;
+    position.y = settleOntoStep(position, half, colliders);
+  }
 
   const ry = moveAndResolveAxis(position, half, velocity.y, "y", velocity.y * dt, colliders);
   position.y = ry.position;

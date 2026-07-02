@@ -1,9 +1,11 @@
 import { WeaponId, WeaponState } from "@fps/shared";
 import * as THREE from "three";
+import { soundEngine } from "../audio/SoundEngine";
 import { InputManager } from "../engine/InputManager";
 import { MuzzleFlashEffect, ScreenShake, TracerPool } from "../render/effects";
 import { randomSpreadDirection } from "./spread";
 import { Target } from "./Target";
+import { feelFor } from "./weaponFeel";
 
 const SWITCH_KEYS: Record<string, WeaponId> = {
   Digit1: "rifle",
@@ -30,6 +32,7 @@ export class CombatSystem {
   private muzzleFlash: MuzzleFlashEffect;
   private tracers: TracerPool;
   private shake = new ScreenShake();
+  private wasReloading = false;
 
   constructor(
     private scene: THREE.Scene,
@@ -64,6 +67,15 @@ export class CombatSystem {
     }
     if (this.input.consumeJustPressed("KeyR")) this.weapon.startReload();
 
+    // Catches both a manual R press AND the auto-reload WeaponState triggers
+    // when a magazine empties, rather than only playing the start sound for
+    // the explicit-keypress path.
+    if (this.weapon.isReloading !== this.wasReloading) {
+      if (this.weapon.isReloading) soundEngine.playReloadStart();
+      else soundEngine.playReloadFinish();
+      this.wasReloading = this.weapon.isReloading;
+    }
+
     // Always drain the click edge, even for auto weapons that fire off
     // .firing instead — otherwise an edge from a click while an auto weapon
     // was active sits unconsumed and fires a free phantom shot the instant
@@ -84,9 +96,12 @@ export class CombatSystem {
     if (!result.fired) return;
 
     this.muzzleFlash.trigger();
-    this.shake.addTrauma(0.18);
-
     const def = this.weapon.current;
+    const feel = feelFor(def.id);
+    this.shake.addTrauma(feel.trauma);
+    this.shake.addKick(feel.kick);
+    soundEngine.playShot(def.id);
+
     const origin = new THREE.Vector3();
     this.camera.getWorldPosition(origin);
     const forward = new THREE.Vector3();
@@ -115,6 +130,9 @@ export class CombatSystem {
       if (killed) anyKill = true;
     }
 
-    if (anyHit) this.events.onHit(anyKill);
+    if (anyHit) {
+      soundEngine.playHitmarker(anyKill);
+      this.events.onHit(anyKill);
+    }
   }
 }

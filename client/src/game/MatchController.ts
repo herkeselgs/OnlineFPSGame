@@ -1,6 +1,7 @@
 import {
   BoxCollider,
   INTERP_DELAY_MS,
+  MAX_HEALTH,
   PlayerId,
   PlayerSnapshot,
   RESPAWN_TIME_MS,
@@ -8,6 +9,8 @@ import {
   SpawnPoint,
 } from "@fps/shared";
 import * as THREE from "three";
+import { soundEngine } from "../audio/SoundEngine";
+import { feelFor } from "../combat/weaponFeel";
 import { InputManager } from "../engine/InputManager";
 import { NetClient } from "../net/NetClient";
 import { MuzzleFlashEffect, ScreenShake, TracerPool } from "../render/effects";
@@ -42,6 +45,7 @@ export class MatchController {
   private matchStartServerTime = 0;
   private wasAlive = true;
   private localDeathAtMs = 0;
+  private lastHealth = MAX_HEALTH;
 
   constructor(
     private scene: THREE.Scene,
@@ -82,8 +86,16 @@ export class MatchController {
     this.hud.updateWeapon(w.current.name, w.currentAmmo, w.current.magazineSize, w.isReloading);
     this.hud.updateHealth(this.prediction.combat.health);
 
+    if (this.prediction.combat.health < this.lastHealth) {
+      this.hud.flashDamage();
+      this.shake.addTrauma(0.22);
+      soundEngine.playDamageTaken();
+    }
+    this.lastHealth = this.prediction.combat.health;
+
     const alive = this.prediction.combat.alive;
     if (this.wasAlive && !alive) this.localDeathAtMs = Date.now();
+    if (!this.wasAlive && alive) soundEngine.playRespawn();
     this.wasAlive = alive;
     const respawnInMs = RESPAWN_TIME_MS - (Date.now() - this.localDeathAtMs);
     this.hud.setDead(!alive, respawnInMs);
@@ -104,6 +116,7 @@ export class MatchController {
     clearInterval(this.pingTimer);
     for (const rp of this.remotePlayersMap.values()) rp.dispose(this.scene);
     this.remotePlayersMap.clear();
+    this.hud.hideMatchInfo();
   }
 
   private handleMessage(msg: ServerMessage): void {
@@ -122,6 +135,7 @@ export class MatchController {
         break;
       case "hit_confirmed":
         this.hud.flashHitmarker(msg.killed);
+        soundEngine.playHitmarker(msg.killed);
         break;
       case "kill_feed":
         this.pushKillFeed(msg.killerId, msg.victimId);
@@ -149,7 +163,9 @@ export class MatchController {
 
   private spawnLocalFireEffects(ev: LocalFireEvent): void {
     this.muzzleFlash.trigger();
-    this.shake.addTrauma(0.18);
+    const feel = feelFor(ev.weapon.id);
+    this.shake.addTrauma(feel.trauma);
+    this.shake.addKick(feel.kick);
     for (const dir of ev.directions) {
       this.raycaster.set(ev.origin, dir);
       this.raycaster.far = ev.weapon.range;

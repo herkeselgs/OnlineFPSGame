@@ -38,6 +38,7 @@ export type ClientMessage =
   | { type: "join_room"; code: string; name: string }
   | { type: "leave_room" }
   | { type: "set_ready"; ready: boolean }
+  | { type: "set_map"; mapId: string }
   | { type: "ping"; t: number }
   | ClientInputMessage;
 
@@ -77,7 +78,7 @@ export type ServerMessage =
   | { type: "room_created"; code: string; selfId: PlayerId }
   | { type: "room_joined"; code: string; selfId: PlayerId; mapId: string }
   | { type: "room_error"; message: string }
-  | { type: "lobby_update"; phase: MatchPhase; players: RoomPlayerSummary[] }
+  | { type: "lobby_update"; phase: MatchPhase; players: RoomPlayerSummary[]; mapId: string }
   | { type: "match_countdown"; startsAtServerTime: number }
   | { type: "match_started"; serverTime: number; mapId: string; durationMs: number }
   | {

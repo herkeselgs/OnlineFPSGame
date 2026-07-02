@@ -1,12 +1,25 @@
-import { DEFAULT_MAP_ID, MAPS } from "@fps/shared";
+import { DEFAULT_MAP_ID, MapDefinition, MAPS } from "@fps/shared";
 import * as THREE from "three";
+import { soundEngine } from "./audio/SoundEngine";
 import { InputManager } from "./engine/InputManager";
 import { MatchController } from "./game/MatchController";
 import { PracticeMode } from "./game/PracticeMode";
 import { MultiplayerFlow } from "./net/MultiplayerFlow";
-import { buildMapScene } from "./render/SceneBuilder";
+import { buildMapScene, BuiltMapScene } from "./render/SceneBuilder";
 import { settingsStore } from "./state/settings";
 import { Hud } from "./ui/Hud";
+
+// Browsers block audio until a real user gesture — resume on the very first
+// pointer interaction anywhere, so audio is ready well before any button the
+// player might click to start playing.
+document.addEventListener("pointerdown", () => soundEngine.resume(), { once: true });
+
+// One delegated listener covers every button in the app (menu, lobby,
+// results, settings, map selector) rather than wiring a click sound into
+// each individual handler.
+document.addEventListener("click", (e) => {
+  if ((e.target as HTMLElement).closest("button")) soundEngine.playUIClick();
+});
 
 interface GameModeLike {
   update(frameDt: number): void;
@@ -26,6 +39,8 @@ const trackpadToggle = document.getElementById("trackpad-toggle") as HTMLInputEl
 const sensitivitySlider = document.getElementById("sensitivity") as HTMLInputElement;
 const sensValueLabel = document.getElementById("sens-value") as HTMLSpanElement;
 const invertYToggle = document.getElementById("invert-y") as HTMLInputElement;
+const volumeSlider = document.getElementById("volume-slider") as HTMLInputElement;
+const volumeValueLabel = document.getElementById("volume-value") as HTMLSpanElement;
 
 // --- Dev settings panel wiring (stand-in for the full Settings screen coming later) ---
 function syncSettingsUI() {
@@ -35,6 +50,9 @@ function syncSettingsUI() {
   sensitivitySlider.value = String(s.sensitivity);
   sensValueLabel.textContent = s.sensitivity.toFixed(2);
   invertYToggle.checked = s.invertY;
+  volumeSlider.value = String(s.masterVolume);
+  volumeValueLabel.textContent = `${Math.round(s.masterVolume * 100)}%`;
+  soundEngine.setVolume(s.masterVolume);
 }
 syncSettingsUI();
 
@@ -52,6 +70,12 @@ sensitivitySlider.addEventListener("input", () => {
 invertYToggle.addEventListener("change", () => {
   settingsStore.update({ invertY: invertYToggle.checked });
 });
+volumeSlider.addEventListener("input", () => {
+  const v = parseFloat(volumeSlider.value);
+  volumeValueLabel.textContent = `${Math.round(v * 100)}%`;
+  settingsStore.update({ masterVolume: v });
+  soundEngine.setVolume(v);
+});
 
 // --- Three.js scene setup ---
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
@@ -62,8 +86,16 @@ const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(90, window.innerWidth / window.innerHeight, 0.05, 200);
 camera.rotation.order = "YXZ";
 
-const map = MAPS[DEFAULT_MAP_ID];
-const mapMeshes = buildMapScene(scene, map);
+// Map geometry is (re)built on demand — practice mode and each multiplayer
+// match may use a different map, so nothing is built once-and-reused here.
+let currentBuilt: BuiltMapScene | null = null;
+
+function loadMap(mapId: string): { map: MapDefinition; meshes: THREE.Mesh[] } {
+  const map = MAPS[mapId] ?? MAPS[DEFAULT_MAP_ID];
+  if (currentBuilt) currentBuilt.dispose();
+  currentBuilt = buildMapScene(scene, map);
+  return { map, meshes: currentBuilt.meshes };
+}
 
 window.addEventListener("resize", () => {
   camera.aspect = window.innerWidth / window.innerHeight;
@@ -81,11 +113,12 @@ const hud = new Hud();
 let activeMode: GameModeLike | null = null;
 let practice: PracticeMode | null = null;
 
-function startPractice(): void {
+function startPractice(mapId: string): void {
   if (practice) practice.dispose();
-  practice = new PracticeMode(scene, camera, input, hud, map, mapMeshes);
+  const { map, meshes } = loadMap(mapId);
+  practice = new PracticeMode(scene, camera, input, hud, map, meshes);
   activeMode = practice;
-  lockTitle.textContent = "Foundry — Practice Mode";
+  lockTitle.textContent = `${map.name} — Practice Mode`;
   lockOverlay.classList.remove("hidden");
 }
 
@@ -96,12 +129,13 @@ function stopPractice(): void {
   practice = null;
 }
 
+const practiceMapSelect = document.getElementById("practice-map") as HTMLSelectElement;
 btnPractice.addEventListener("click", () => {
   multiplayer.hideAllScreens();
-  startPractice();
+  startPractice(practiceMapSelect.value);
 });
 
-const multiplayer = new MultiplayerFlow(scene, camera, input, hud, mapMeshes, map, (match: MatchController | null) => {
+const multiplayer = new MultiplayerFlow(scene, camera, input, hud, loadMap, (match: MatchController | null) => {
   stopPractice();
   activeMode = match;
   if (match) lockOverlay.classList.add("hidden");

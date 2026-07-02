@@ -15,6 +15,7 @@ import {
   WeaponState,
 } from "@fps/shared";
 import * as THREE from "three";
+import { soundEngine } from "../audio/SoundEngine";
 import { randomSpreadDirection } from "../combat/spread";
 import { InputManager } from "../engine/InputManager";
 import { NetClient } from "../net/NetClient";
@@ -58,6 +59,7 @@ export class PredictionController {
   private accumulator = 0;
   private pendingInputs: ClientInputMessage[] = [];
   private rttMs = 0;
+  private wasReloading = false;
 
   constructor(
     spawn: SpawnPoint,
@@ -118,6 +120,12 @@ export class PredictionController {
     const reload = this.input.consumeJustPressed("KeyR");
     if (reload) this.weapon.startReload();
 
+    if (this.weapon.isReloading !== this.wasReloading) {
+      if (this.weapon.isReloading) soundEngine.playReloadStart();
+      else soundEngine.playReloadFinish();
+      this.wasReloading = this.weapon.isReloading;
+    }
+
     // Drain the click edge unconditionally regardless of fire mode — see
     // CombatSystem for why (a stale edge from an auto weapon otherwise
     // fires a phantom shot the instant you switch to a semi-auto weapon).
@@ -130,6 +138,7 @@ export class PredictionController {
     if (this.combat.alive && wantsFire) {
       const result = this.weapon.tryFire();
       if (result.fired) {
+        soundEngine.playShot(this.weapon.current.id);
         const { origin, directions } = this.computeFireRay(result.pelletCount);
         fireDirections = directions.map((d) => ({ x: d.x, y: d.y, z: d.z }));
         fireEvent = { origin, directions, weapon: this.weapon.current };

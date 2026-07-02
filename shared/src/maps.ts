@@ -81,8 +81,65 @@ export const TEST_ARENA: MapDefinition = {
   ],
 };
 
+/**
+ * A stair-climbable duel map (contrast to Foundry, which is deliberately
+ * flat) — a raised sandstone platform at each spawn end gives a real
+ * high-ground choice, reached by a 3-tread staircase (each tread rises
+ * 0.4m, under STEP_HEIGHT so it's walkable, no jump-timing required).
+ * Warm palette against Foundry's cool industrial gray so the two maps also
+ * read differently at a glance, not just play differently.
+ */
+export const BASTION: MapDefinition = {
+  id: "bastion",
+  name: "Bastion",
+  skyColor: 0xffb877,
+  fogColor: 0xf2b483,
+  fogDensity: 0.012,
+  ambientIntensity: 0.72,
+  blocks: [
+    // Floor
+    box("floor", 0xc9a876, { x: 0, y: -0.5, z: 0 }, { x: 20, y: 0.5, z: 14 }),
+
+    // Perimeter walls (same corner-overlap technique as Foundry)
+    box("wall", 0xddc39c, { x: 0, y: 2, z: -14 }, { x: 20.5, y: 2, z: 0.5 }),
+    box("wall", 0xddc39c, { x: 0, y: 2, z: 14 }, { x: 20.5, y: 2, z: 0.5 }),
+    box("wall", 0xddc39c, { x: -20, y: 2, z: 0 }, { x: 0.5, y: 2, z: 14.5 }),
+    box("wall", 0xddc39c, { x: 20, y: 2, z: 0 }, { x: 0.5, y: 2, z: 14.5 }),
+
+    // West platform (top at y=1.2) + 3-tread staircase leading up to it
+    box("platform", 0xb98f5c, { x: -15, y: 0.1, z: 0 }, { x: 4, y: 1.1, z: 4 }),
+    box("platform", 0xa9834f, { x: -8.5, y: -0.3, z: 0 }, { x: 0.5, y: 0.7, z: 4 }), // tread, top 0.4
+    box("platform", 0xa9834f, { x: -9.5, y: -0.1, z: 0 }, { x: 0.5, y: 0.9, z: 4 }), // tread, top 0.8
+    box("platform", 0xa9834f, { x: -10.5, y: 0.1, z: 0 }, { x: 0.5, y: 1.1, z: 4 }), // tread, top 1.2
+
+    // East platform, mirrored
+    box("platform", 0xb98f5c, { x: 15, y: 0.1, z: 0 }, { x: 4, y: 1.1, z: 4 }),
+    box("platform", 0xa9834f, { x: 8.5, y: -0.3, z: 0 }, { x: 0.5, y: 0.7, z: 4 }),
+    box("platform", 0xa9834f, { x: 9.5, y: -0.1, z: 0 }, { x: 0.5, y: 0.9, z: 4 }),
+    box("platform", 0xa9834f, { x: 10.5, y: 0.1, z: 0 }, { x: 0.5, y: 1.1, z: 4 }),
+
+    // Mid cover, offset (not centered) so there's no single dominant
+    // sightline between the two platforms
+    box("cover", 0x8a6a42, { x: -3, y: 1.25, z: 3 }, { x: 1, y: 1.25, z: 1 }),
+    box("cover", 0x8a6a42, { x: 3, y: 1.25, z: -3 }, { x: 1, y: 1.25, z: 1 }),
+
+    // Low cover near each spawn
+    box("cover", 0x9c7a52, { x: -6, y: 0.6, z: -6 }, { x: 1.3, y: 0.6, z: 1.3 }),
+    box("cover", 0x9c7a52, { x: 6, y: 0.6, z: 6 }, { x: 1.3, y: 0.6, z: 1.3 }),
+  ],
+  spawns: [
+    // Ground level near each platform's base, clear of the treads
+    // (x: -11..-8 / 8..11) and low cover boxes.
+    { position: { x: -8, y: 1.2, z: 8 }, yaw: -0.785 },
+    { position: { x: 8, y: 1.2, z: -8 }, yaw: 2.356 },
+  ],
+};
+
 export const MAPS: Record<string, MapDefinition> = {
   [TEST_ARENA.id]: TEST_ARENA,
+  [BASTION.id]: BASTION,
 };
+
+export const MAP_ORDER: string[] = [TEST_ARENA.id, BASTION.id];
 
 export const DEFAULT_MAP_ID = TEST_ARENA.id;

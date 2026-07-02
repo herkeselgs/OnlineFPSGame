@@ -3,7 +3,9 @@ import {
   BoxCollider,
   ClientMessage,
   createPlayerCombatState,
+  DEFAULT_MAP_ID,
   INTERP_DELAY_MS,
+  MAPS,
   MATCH_COUNTDOWN_MS,
   MATCH_DURATION_MS,
   MATCH_SCORE_LIMIT,
@@ -22,7 +24,6 @@ import {
   SIM_HZ,
   SNAPSHOT_HZ,
   stepPlayerMovement,
-  TEST_ARENA,
   Vec3,
   WeaponDef,
   WeaponState,
@@ -36,8 +37,12 @@ const MAX_PLAYERS = 2; // 1v1 for now; room model below doesn't assume this beyo
 
 export class Room {
   readonly code: string;
-  readonly map = TEST_ARENA;
   phase: MatchPhase = "lobby";
+  private mapId: string = DEFAULT_MAP_ID;
+
+  get map() {
+    return MAPS[this.mapId];
+  }
 
   private players = new Map<PlayerId, PlayerSession>();
   private spawnIndexByPlayer = new Map<PlayerId, number>();
@@ -104,6 +109,12 @@ export class Room {
         session.ready = msg.ready;
         this.broadcastLobby();
         this.maybeStartCountdown();
+        break;
+      case "set_map":
+        if (this.phase === "lobby" && MAPS[msg.mapId]) {
+          this.mapId = msg.mapId;
+          this.broadcastLobby();
+        }
         break;
       case "input":
         session.inputQueue.push(msg);
@@ -328,7 +339,7 @@ export class Room {
       kills: p.combat.kills,
       deaths: p.combat.deaths,
     }));
-    this.broadcast({ type: "lobby_update", phase: this.phase, players });
+    this.broadcast({ type: "lobby_update", phase: this.phase, players, mapId: this.mapId });
   }
 
   private broadcastSnapshot(nowMs: number): void {

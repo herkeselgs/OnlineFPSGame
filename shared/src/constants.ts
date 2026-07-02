@@ -39,6 +39,10 @@ export const AIR_CONTROL_MAX_SPEED = 6.2;
 export const GRAVITY = -22;
 export const MAX_FALL_SPEED = -40;
 export const JUMP_SPEED = 7.8;
+/** Max height (m) a grounded player can walk up onto without jumping —
+ * lets maps use short stair-step geometry for real verticality despite
+ * collision being axis-aligned boxes only (no sloped ramps). */
+export const STEP_HEIGHT = 0.55;
 
 // --- Gameplay ---
 export const MAX_HEALTH = 100;

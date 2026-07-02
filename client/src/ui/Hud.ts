@@ -1,4 +1,5 @@
 const HITMARKER_DURATION_MS = 150;
+const DAMAGE_FLASH_DURATION_MS = 350;
 const FEED_ITEM_LIFETIME_MS = 3500;
 
 export class Hud {
@@ -11,8 +12,10 @@ export class Hud {
   private deathOverlayEl = document.getElementById("death-overlay") as HTMLDivElement;
   private scoreEl = document.getElementById("hud-score") as HTMLDivElement;
   private timerEl = document.getElementById("hud-timer") as HTMLDivElement;
+  private damageFlashEl = document.getElementById("damage-flash") as HTMLDivElement;
 
   private hitmarkerRemainingMs = 0;
+  private damageFlashRemainingMs = 0;
 
   updateWeapon(name: string, ammo: number, magSize: number, reloading: boolean): void {
     this.weaponNameEl.textContent = name;
@@ -35,10 +38,12 @@ export class Hud {
   }
 
   updateScore(selfName: string, selfScore: number, oppName: string, oppScore: number): void {
+    this.scoreEl.style.display = "block";
     this.scoreEl.textContent = `${selfName} ${selfScore} — ${oppScore} ${oppName}`;
   }
 
   updateTimer(remainingMs: number): void {
+    this.timerEl.style.display = "block";
     const total = Math.max(0, Math.ceil(remainingMs / 1000));
     const m = Math.floor(total / 60);
     const s = total % 60;
@@ -51,6 +56,19 @@ export class Hud {
     this.hitmarkerEl.style.opacity = "1";
   }
 
+  flashDamage(): void {
+    this.damageFlashRemainingMs = DAMAGE_FLASH_DURATION_MS;
+    this.damageFlashEl.style.opacity = "1";
+  }
+
+  /** Called when leaving a match — score/timer are match-only HUD elements
+   * and shouldn't linger with stale content in practice mode or the menu. */
+  hideMatchInfo(): void {
+    this.scoreEl.style.display = "none";
+    this.timerEl.style.display = "none";
+    this.setDead(false, 0);
+  }
+
   pushFeed(message: string): void {
     const line = document.createElement("div");
     line.className = "feed-line";
@@ -60,8 +78,13 @@ export class Hud {
   }
 
   update(dtMs: number): void {
-    if (this.hitmarkerRemainingMs <= 0) return;
-    this.hitmarkerRemainingMs -= dtMs;
-    this.hitmarkerEl.style.opacity = String(Math.max(0, this.hitmarkerRemainingMs / HITMARKER_DURATION_MS));
+    if (this.hitmarkerRemainingMs > 0) {
+      this.hitmarkerRemainingMs -= dtMs;
+      this.hitmarkerEl.style.opacity = String(Math.max(0, this.hitmarkerRemainingMs / HITMARKER_DURATION_MS));
+    }
+    if (this.damageFlashRemainingMs > 0) {
+      this.damageFlashRemainingMs -= dtMs;
+      this.damageFlashEl.style.opacity = String(Math.max(0, this.damageFlashRemainingMs / DAMAGE_FLASH_DURATION_MS));
+    }
   }
 }

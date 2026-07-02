@@ -103,19 +103,27 @@ export class TracerPool {
 }
 
 /**
- * Trauma-based screen shake: each shot adds "trauma" which decays over
- * time, and the visible shake offset scales with trauma^2 so small amounts
- * are barely noticeable but stacking hits (e.g. rapid SMG fire) ramp up
- * quickly without ever feeling nauseating — capped low deliberately per the
- * "subtle, not nauseating" requirement.
+ * Trauma-based screen shake plus a directional recoil kick, combined into
+ * one offset so the caller (main.ts) just adds a single {yaw,pitch,roll} to
+ * the camera each frame:
+ *  - trauma: random jitter that decays over time, scaled by trauma^2 so
+ *    small amounts are barely noticeable but stacking hits (e.g. rapid SMG
+ *    fire) ramp up quickly — capped low per the "subtle, not nauseating"
+ *    requirement.
+ *  - kick: a directional "gun pushes the view up" impulse per shot that
+ *    springs back down afterward. Separate from trauma because it needs to
+ *    read as an intentional recoil pattern, not random noise — this is what
+ *    actually gives weapons a sense of weight when fired.
  */
 export class ScreenShake {
   private trauma = 0;
+  private kickPitch = 0;
   offsetYaw = 0;
   offsetPitch = 0;
   offsetRoll = 0;
 
   private readonly decayPerSecond = 3.2;
+  private readonly kickRecoverPerSecond = 14;
   private readonly maxYaw = 0.012;
   private readonly maxPitch = 0.01;
   private readonly maxRoll = 0.008;
@@ -124,15 +132,24 @@ export class ScreenShake {
     this.trauma = Math.min(1, this.trauma + amount);
   }
 
+  /** Positive amount kicks the view UP (negative pitch), matching real
+   * recoil — it springs back down over the next few frames. */
+  addKick(amount: number): void {
+    this.kickPitch -= amount;
+  }
+
   update(dt: number): void {
     if (this.trauma <= 0) {
-      this.offsetYaw = this.offsetPitch = this.offsetRoll = 0;
-      return;
+      this.offsetYaw = this.offsetRoll = 0;
+    } else {
+      this.trauma = Math.max(0, this.trauma - this.decayPerSecond * dt);
+      const shake = this.trauma * this.trauma;
+      this.offsetYaw = this.maxYaw * shake * (Math.random() * 2 - 1);
+      this.offsetRoll = this.maxRoll * shake * (Math.random() * 2 - 1);
     }
-    this.trauma = Math.max(0, this.trauma - this.decayPerSecond * dt);
-    const shake = this.trauma * this.trauma;
-    this.offsetYaw = this.maxYaw * shake * (Math.random() * 2 - 1);
-    this.offsetPitch = this.maxPitch * shake * (Math.random() * 2 - 1);
-    this.offsetRoll = this.maxRoll * shake * (Math.random() * 2 - 1);
+
+    const shakePitch = this.trauma > 0 ? this.maxPitch * this.trauma * this.trauma * (Math.random() * 2 - 1) : 0;
+    this.kickPitch += (0 - this.kickPitch) * Math.min(1, this.kickRecoverPerSecond * dt);
+    this.offsetPitch = shakePitch + this.kickPitch;
   }
 }

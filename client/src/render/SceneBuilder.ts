@@ -1,13 +1,20 @@
 import { MapDefinition } from "@fps/shared";
 import * as THREE from "three";
 
+export interface BuiltMapScene {
+  meshes: THREE.Mesh[];
+  dispose(): void;
+}
+
 /**
  * Builds the low-poly render geometry for a map directly from the shared
  * MapDefinition — the same block list the server/client use for collision.
  * Flat MeshLambertMaterial (no PBR, no shadow maps) keeps this cheap on
- * integrated GPUs.
+ * integrated GPUs. Returns a dispose() so switching maps (practice map
+ * choice, or a different map each match) doesn't leak geometry/materials/
+ * lights from the previous map.
  */
-export function buildMapScene(scene: THREE.Scene, map: MapDefinition): THREE.Mesh[] {
+export function buildMapScene(scene: THREE.Scene, map: MapDefinition): BuiltMapScene {
   scene.background = new THREE.Color(map.skyColor);
   scene.fog = new THREE.FogExp2(map.fogColor, map.fogDensity);
 
@@ -40,5 +47,15 @@ export function buildMapScene(scene: THREE.Scene, map: MapDefinition): THREE.Mes
     scene.add(mesh);
     meshes.push(mesh);
   }
-  return meshes;
+
+  return {
+    meshes,
+    dispose() {
+      scene.remove(hemi);
+      scene.remove(sun);
+      for (const mesh of meshes) scene.remove(mesh);
+      geometry.dispose();
+      for (const mat of materialCache.values()) mat.dispose();
+    },
+  };
 }

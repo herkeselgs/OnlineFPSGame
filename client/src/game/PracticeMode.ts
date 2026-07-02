@@ -1,5 +1,6 @@
 import { MapDefinition } from "@fps/shared";
 import * as THREE from "three";
+import { soundEngine } from "../audio/SoundEngine";
 import { CombatSystem } from "../combat/CombatSystem";
 import { Target } from "../combat/Target";
 import { InputManager } from "../engine/InputManager";
@@ -42,6 +43,8 @@ export class PracticeMode {
       this.targets.push(target);
       this.combat.addTarget(target);
     }
+
+    soundEngine.startAmbient();
   }
 
   update(frameDt: number): void {
@@ -62,6 +65,7 @@ export class PracticeMode {
   }
 
   dispose(): void {
+    soundEngine.stopAmbient();
     for (const t of this.targets) t.dispose(this.scene);
     this.targets = [];
   }
