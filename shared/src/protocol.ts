@@ -34,8 +34,8 @@ export interface ClientInputMessage {
 }
 
 export type ClientMessage =
-  | { type: "create_room"; name: string }
-  | { type: "join_room"; code: string; name: string }
+  | { type: "create_room"; name: string; color: number }
+  | { type: "join_room"; code: string; name: string; color: number }
   | { type: "leave_room" }
   | { type: "set_ready"; ready: boolean }
   | { type: "set_map"; mapId: string }
@@ -45,6 +45,7 @@ export type ClientMessage =
 export interface RoomPlayerSummary {
   id: PlayerId;
   name: string;
+  color: number;
   ready: boolean;
   connected: boolean;
   kills: number;
@@ -64,12 +65,23 @@ export interface PlayerSnapshot {
   weapon: WeaponId;
   ammo: number;
   reloading: boolean;
+  color: number;
   kills: number;
   deaths: number;
   /** Only meaningful to the player it belongs to — everyone else's entry is
    * ignored by every client except that one player, who uses it to discard
    * confirmed inputs and replay the rest during reconciliation. */
   lastProcessedSeq: number;
+}
+
+export interface MatchScoreEntry {
+  id: PlayerId;
+  name: string;
+  kills: number;
+  deaths: number;
+  shotsFired: number;
+  shotsHit: number;
+  damageDealt: number;
 }
 
 export type MatchPhase = "lobby" | "countdown" | "active" | "ended";
@@ -91,7 +103,7 @@ export type ServerMessage =
   | { type: "kill_feed"; killerId: PlayerId | null; victimId: PlayerId; weapon: WeaponId }
   | {
       type: "match_ended";
-      scores: { id: PlayerId; name: string; kills: number; deaths: number }[];
+      scores: MatchScoreEntry[];
       winnerId: PlayerId | null;
     }
   | { type: "player_left"; id: PlayerId }

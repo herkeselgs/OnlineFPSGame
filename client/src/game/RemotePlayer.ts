@@ -1,7 +1,7 @@
 import { PositionHistory, Vec3, WeaponId, LAG_COMP_HISTORY_MS } from "@fps/shared";
 import * as THREE from "three";
 
-const BODY_COLOR = 0x3aa0e8;
+const FALLBACK_COLOR = 0x3aa0e8;
 
 /**
  * Visual + interpolated representation of another player. Snapshots arrive
@@ -22,12 +22,13 @@ export class RemotePlayer {
 
   private history = new PositionHistory(LAG_COMP_HISTORY_MS);
   private material: THREE.MeshLambertMaterial;
+  private currentColor = FALLBACK_COLOR;
 
   constructor(scene: THREE.Scene, id: string, name: string) {
     this.id = id;
     this.name = name;
     const geometry = new THREE.CapsuleGeometry(0.35, 1.0, 4, 8);
-    this.material = new THREE.MeshLambertMaterial({ color: BODY_COLOR });
+    this.material = new THREE.MeshLambertMaterial({ color: FALLBACK_COLOR });
     this.mesh = new THREE.Mesh(geometry, this.material);
     this.mesh.userData.remotePlayerRef = this;
     scene.add(this.mesh);
@@ -40,6 +41,7 @@ export class RemotePlayer {
     health: number,
     alive: boolean,
     weapon: WeaponId,
+    color: number,
     kills: number,
     deaths: number
   ): void {
@@ -49,6 +51,10 @@ export class RemotePlayer {
     this.weapon = weapon;
     this.kills = kills;
     this.deaths = deaths;
+    if (color !== this.currentColor) {
+      this.currentColor = color;
+      this.material.color.setHex(color);
+    }
   }
 
   update(renderServerTimeMs: number): void {

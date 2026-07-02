@@ -157,7 +157,7 @@ export class MatchController {
         this.remotePlayersMap.set(p.id, rp);
         this.raycastables.push(rp.mesh);
       }
-      rp.ingestSnapshot(p.position, p.yaw, serverTimeMs, p.health, p.alive, p.weapon, p.kills, p.deaths);
+      rp.ingestSnapshot(p.position, p.yaw, serverTimeMs, p.health, p.alive, p.weapon, p.color, p.kills, p.deaths);
     }
   }
 

@@ -59,12 +59,12 @@ export class Room {
     return this.players.size;
   }
 
-  addPlayer(ws: WebSocket, name: string): PlayerId | { error: string } {
+  addPlayer(ws: WebSocket, name: string, color: number): PlayerId | { error: string } {
     if (this.players.size >= MAX_PLAYERS) return { error: "Room is full" };
     if (this.phase !== "lobby") return { error: "Match already in progress" };
 
     const id = randomUUID();
-    const session = createPlayerSession(id, ws, name || "Player");
+    const session = createPlayerSession(id, ws, name || "Player", color);
     const spawnIndex = this.players.size % this.map.spawns.length;
     const spawn = this.map.spawns[spawnIndex];
     session.physics.position = { ...spawn.position };
@@ -89,6 +89,9 @@ export class Room {
         name: p.name,
         kills: p.combat.kills,
         deaths: p.combat.deaths,
+        shotsFired: p.shotsFired,
+        shotsHit: p.shotsHit,
+        damageDealt: p.damageDealt,
       }));
       this.phase = "ended";
       this.broadcast({ type: "match_ended", scores, winnerId });
@@ -171,6 +174,9 @@ export class Room {
       session.weapon = new WeaponState();
       session.history.clear();
       session.inputQueue.length = 0;
+      session.shotsFired = 0;
+      session.shotsHit = 0;
+      session.damageDealt = 0;
     }
 
     this.broadcast({ type: "match_started", serverTime: nowMs, mapId: this.map.id, durationMs: MATCH_DURATION_MS });
@@ -251,6 +257,7 @@ export class Room {
     const rewindTime = nowMs - shooter.lastRttMs / 2 - INTERP_DELAY_MS;
 
     const pellets = rawDirections.slice(0, weaponDef.pelletCount);
+    shooter.shotsFired += pellets.length;
     for (const rawDir of pellets) {
       const dir = safeNormalize(rawDir);
       if (!dir) continue;
@@ -289,6 +296,9 @@ export class Room {
     const dmg = applyDamage(bestTarget.combat, weaponDef.damage, nowMs);
     if (!dmg.applied) return;
 
+    shooter.shotsHit += 1;
+    shooter.damageDealt += weaponDef.damage;
+
     this.send(shooter.id, {
       type: "hit_confirmed",
       targetId: bestTarget.id,
@@ -315,6 +325,9 @@ export class Room {
       name: p.name,
       kills: p.combat.kills,
       deaths: p.combat.deaths,
+      shotsFired: p.shotsFired,
+      shotsHit: p.shotsHit,
+      damageDealt: p.damageDealt,
     }));
     const sorted = [...scores].sort((a, b) => b.kills - a.kills);
     const winnerId = sorted.length >= 1 && (sorted.length === 1 || sorted[0].kills > sorted[1].kills) ? sorted[0].id : null;
@@ -334,6 +347,7 @@ export class Room {
     const players: RoomPlayerSummary[] = [...this.players.values()].map((p) => ({
       id: p.id,
       name: p.name,
+      color: p.color,
       ready: p.ready,
       connected: p.connected,
       kills: p.combat.kills,
@@ -356,6 +370,7 @@ export class Room {
       weapon: p.weapon.currentId,
       ammo: p.weapon.currentAmmo,
       reloading: p.weapon.isReloading,
+      color: p.color,
       kills: p.combat.kills,
       deaths: p.combat.deaths,
       lastProcessedSeq: p.lastProcessedSeq,

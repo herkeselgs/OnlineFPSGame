@@ -3,6 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="description" content="Duel — a trackpad-friendly 1v1 browser FPS. No download, no account, playable in seconds." />
     <title>Duel — Browser FPS</title>
     <link rel="stylesheet" href="/src/style.css" />
   </head>
@@ -74,15 +75,27 @@
     <div id="screen-menu" class="screen">
       <div class="menu-glow"></div>
       <div class="screen-panel menu-panel">
+        <div id="mobile-notice" class="mobile-notice hidden">
+          📱 Duel needs a keyboard and mouse/trackpad to play. Create a room here and text the link to yourself, then open it on a laptop!
+        </div>
+
         <div class="brand">
           <h1 class="brand-title">DUEL</h1>
           <p class="subtitle">Trackpad-friendly 1v1 browser FPS</p>
+        </div>
+
+        <div class="level-badge">
+          <span id="level-badge-text" class="level-badge-text">Level 1</span>
+          <div class="xp-bar"><div id="xp-bar-fill" class="xp-bar-fill"></div></div>
         </div>
 
         <label class="row">
           <span>Your name</span>
           <input id="player-name" type="text" maxlength="16" placeholder="Player" />
         </label>
+
+        <div class="cosmetic-label">Color <span id="cosmetic-name"></span></div>
+        <div id="cosmetic-select" class="cosmetic-select"></div>
 
         <button id="btn-create-room" class="btn-primary">Create Room</button>
 
@@ -101,6 +114,7 @@
           </select>
         </label>
         <button id="btn-practice" class="btn-secondary">Practice (offline)</button>
+        <button id="btn-open-stats" class="btn-secondary">Stats &amp; Match History</button>
 
         <div id="menu-error" class="menu-error"></div>
       </div>
@@ -135,6 +149,16 @@
         <div id="results-scores" class="results-scores"></div>
         <button id="btn-rematch" class="btn-primary">Ready for Rematch</button>
         <button id="btn-results-menu" class="btn-secondary">Back to Menu</button>
+      </div>
+    </div>
+
+    <div id="screen-stats" class="screen hidden">
+      <div class="screen-panel stats-panel">
+        <h1>Stats</h1>
+        <div id="stats-summary" class="stats-summary"></div>
+        <div class="map-select-label">Recent Matches</div>
+        <div id="stats-history" class="stats-history"></div>
+        <button id="btn-stats-back" class="btn-secondary">Back</button>
       </div>
     </div>
 

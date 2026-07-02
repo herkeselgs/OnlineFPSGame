@@ -8,6 +8,7 @@ import { MultiplayerFlow } from "./net/MultiplayerFlow";
 import { buildMapScene, BuiltMapScene } from "./render/SceneBuilder";
 import { settingsStore } from "./state/settings";
 import { Hud } from "./ui/Hud";
+import { ProgressionUI } from "./ui/ProgressionUI";
 
 // Browsers block audio until a real user gesture — resume on the very first
 // pointer interaction anywhere, so audio is ready well before any button the
@@ -140,6 +141,11 @@ const multiplayer = new MultiplayerFlow(scene, camera, input, hud, loadMap, (mat
   activeMode = match;
   if (match) lockOverlay.classList.add("hidden");
 });
+
+new ProgressionUI(
+  () => multiplayer.showMenu(),
+  () => multiplayer.hideAllScreens()
+);
 
 btnStart.addEventListener("click", () => {
   const mode = settingsStore.get().lookMode;

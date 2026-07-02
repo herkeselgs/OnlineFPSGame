@@ -41,7 +41,7 @@ wss.on("connection", (socket: WebSocket) => {
 
     if (msg.type === "create_room") {
       const room = roomManager.createRoom();
-      const id = room.addPlayer(socket, msg.name);
+      const id = room.addPlayer(socket, msg.name, msg.color);
       if (typeof id !== "string") {
         socket.send(JSON.stringify({ type: "room_error", message: id.error }));
         return;
@@ -58,7 +58,7 @@ wss.on("connection", (socket: WebSocket) => {
         socket.send(JSON.stringify({ type: "room_error", message: "Room not found" }));
         return;
       }
-      const id = room.addPlayer(socket, msg.name);
+      const id = room.addPlayer(socket, msg.name, msg.color);
       if (typeof id !== "string") {
         socket.send(JSON.stringify({ type: "room_error", message: id.error }));
         return;

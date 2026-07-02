@@ -1,8 +1,9 @@
-import { MAP_ORDER, MAPS, MapDefinition, PlayerId, ServerMessage } from "@fps/shared";
+import { colorForCosmetic, MAP_ORDER, MAPS, MapDefinition, MatchScoreEntry, PlayerId, ServerMessage } from "@fps/shared";
 import * as THREE from "three";
 import { soundEngine } from "../audio/SoundEngine";
 import { MatchController } from "../game/MatchController";
 import { InputManager } from "../engine/InputManager";
+import { MatchRecord, profileStore } from "../state/profile";
 import { Hud } from "../ui/Hud";
 import { NetClient } from "./NetClient";
 
@@ -72,6 +73,8 @@ export class MultiplayerFlow {
 
     this.buildMapSelector();
 
+    if (profileStore.get().name) this.nameInput.value = profileStore.get().name;
+
     const urlRoom = new URLSearchParams(location.search).get("room");
     if (urlRoom) {
       this.joinCodeInput.value = urlRoom.toUpperCase();
@@ -119,7 +122,9 @@ export class MultiplayerFlow {
   private createRoom(): void {
     this.menuError.textContent = "";
     const name = this.nameInput.value.trim() || randomDefaultName();
-    this.connectThen(() => this.net.send({ type: "create_room", name }));
+    profileStore.setName(name);
+    const color = colorForCosmetic(profileStore.get().cosmeticId);
+    this.connectThen(() => this.net.send({ type: "create_room", name, color }));
   }
 
   private joinRoom(rawCode: string): void {
@@ -130,7 +135,9 @@ export class MultiplayerFlow {
     }
     this.menuError.textContent = "";
     const name = this.nameInput.value.trim() || randomDefaultName();
-    this.connectThen(() => this.net.send({ type: "join_room", code, name }));
+    profileStore.setName(name);
+    const color = colorForCosmetic(profileStore.get().cosmeticId);
+    this.connectThen(() => this.net.send({ type: "join_room", code, name, color }));
   }
 
   private connectThen(action: () => void): void {
@@ -191,7 +198,7 @@ export class MultiplayerFlow {
     this.readyBtn.textContent = "Ready";
   }
 
-  private renderLobby(players: { id: PlayerId; name: string; ready: boolean }[]): void {
+  private renderLobby(players: { id: PlayerId; name: string; color: number; ready: boolean }[]): void {
     this.lobbyPlayers.innerHTML = "";
     for (const p of players) {
       const row = document.createElement("div");
@@ -201,7 +208,7 @@ export class MultiplayerFlow {
       identity.className = "lobby-player-identity";
       const avatar = document.createElement("div");
       avatar.className = "lobby-avatar";
-      avatar.style.background = avatarColorFor(p.id);
+      avatar.style.background = `#${p.color.toString(16).padStart(6, "0")}`;
       avatar.textContent = (p.name[0] ?? "?").toUpperCase();
       const label = document.createElement("span");
       label.textContent = p.id === this.selfId ? `${p.name} (you)` : p.name;
@@ -271,7 +278,7 @@ export class MultiplayerFlow {
     soundEngine.startAmbient();
   }
 
-  private showResults(scores: { id: PlayerId; name: string; kills: number; deaths: number }[], winnerId: PlayerId | null): void {
+  private showResults(scores: MatchScoreEntry[], winnerId: PlayerId | null): void {
     soundEngine.stopAmbient();
     if (this.match) {
       this.match.dispose();
@@ -280,16 +287,38 @@ export class MultiplayerFlow {
     }
     this.hideAllScreens();
     this.screenResults.classList.remove("hidden");
-    this.resultsTitle.textContent =
-      winnerId === this.selfId ? "Victory!" : winnerId ? "Defeat" : "Match Over";
+    const won = winnerId === this.selfId;
+    this.resultsTitle.textContent = won ? "Victory!" : winnerId ? "Defeat" : "Match Over";
 
     this.resultsScores.innerHTML = "";
     for (const s of [...scores].sort((a, b) => b.kills - a.kills)) {
       const row = document.createElement("div");
       row.className = "results-score-row" + (s.id === winnerId ? " is-winner" : "");
       const label = s.id === this.selfId ? `${s.name} (you)` : s.name;
-      row.innerHTML = `<span>${label}</span><span>${s.kills} K / ${s.deaths} D</span>`;
+      const accuracy = s.shotsFired > 0 ? Math.round((s.shotsHit / s.shotsFired) * 100) : 0;
+      row.innerHTML = `<span>${label}</span><span>${s.kills} K / ${s.deaths} D &middot; ${accuracy}% acc &middot; ${s.damageDealt} dmg</span>`;
       this.resultsScores.appendChild(row);
+    }
+
+    const self = scores.find((s) => s.id === this.selfId);
+    if (self) {
+      const opponent = scores.find((s) => s.id !== this.selfId);
+      const record: MatchRecord = {
+        dateMs: Date.now(),
+        mapName: MAPS[this.currentMapId]?.name ?? this.currentMapId,
+        result: winnerId === null ? "draw" : won ? "win" : "loss",
+        kills: self.kills,
+        deaths: self.deaths,
+        shotsFired: self.shotsFired,
+        shotsHit: self.shotsHit,
+        damageDealt: self.damageDealt,
+        opponentName: opponent?.name ?? "Opponent",
+      };
+      const { xpAwarded, newLevel, leveledUp } = profileStore.recordMatch(record);
+      const xpLine = document.createElement("div");
+      xpLine.className = "results-xp-line";
+      xpLine.textContent = leveledUp ? `+${xpAwarded} XP — Level up! Now level ${newLevel}` : `+${xpAwarded} XP`;
+      this.resultsScores.appendChild(xpLine);
     }
   }
 
@@ -332,14 +361,4 @@ function el<T extends HTMLElement = HTMLElement>(id: string): T {
   const found = document.getElementById(id);
   if (!found) throw new Error(`Missing #${id} in index.html`);
   return found as T;
-}
-
-const AVATAR_COLORS = ["#5fd68a", "#4fa8e8", "#f2a35e", "#e86b8a", "#c48bf0", "#6bd6c4"];
-
-/** Deterministic color per player id so avatars stay stable across renders
- * without needing the server to assign/track a color. */
-function avatarColorFor(id: string): string {
-  let hash = 0;
-  for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
-  return AVATAR_COLORS[hash % AVATAR_COLORS.length];
 }
