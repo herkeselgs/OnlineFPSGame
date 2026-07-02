@@ -10,13 +10,22 @@
     <canvas id="game-canvas"></canvas>
 
     <div id="crosshair" class="crosshair"></div>
+    <div id="hitmarker" class="hitmarker"></div>
 
     <div id="perf-hud" class="perf-hud"></div>
 
+    <div id="kill-feed" class="kill-feed"></div>
+
+    <div id="weapon-hud" class="weapon-hud">
+      <div id="hud-reload" class="hud-reload">RELOADING</div>
+      <div id="hud-ammo" class="hud-ammo">24 / 24</div>
+      <div id="hud-weapon" class="hud-weapon">Rifle</div>
+    </div>
+
     <div id="lock-overlay" class="lock-overlay">
       <div class="lock-panel">
-        <h1>Foundry — Movement Test</h1>
-        <p>WASD to move, Space to jump, mouse/trackpad to look.</p>
+        <h1>Foundry — Combat Test</h1>
+        <p>WASD to move, Space to jump, mouse/trackpad to look. Left click to fire, R to reload, 1/2/3 to switch weapons.</p>
         <button id="btn-start" class="btn-primary">Click to Play</button>
 
         <div class="dev-settings">

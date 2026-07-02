@@ -3,3 +3,4 @@ export * from "./collision.js";
 export * from "./constants.js";
 export * from "./movement.js";
 export * from "./maps.js";
+export * from "./weapons.js";

@@ -36,6 +36,108 @@ html, body {
   z-index: 10;
 }
 
+.hitmarker {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  width: 22px;
+  height: 22px;
+  margin: -11px 0 0 -11px;
+  pointer-events: none;
+  z-index: 11;
+  opacity: 0;
+}
+
+.hitmarker::before,
+.hitmarker::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 22px;
+  height: 2px;
+  background: #f2f5f8;
+  transform-origin: center;
+}
+
+.hitmarker::before {
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+
+.hitmarker::after {
+  transform: translate(-50%, -50%) rotate(-45deg);
+}
+
+.hitmarker-kill::before,
+.hitmarker-kill::after {
+  background: #ff5450;
+}
+
+.kill-feed {
+  position: fixed;
+  top: 14px;
+  right: 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  z-index: 10;
+  pointer-events: none;
+}
+
+.feed-line {
+  font: 13px/1.4 -apple-system, sans-serif;
+  color: #f2f5f8;
+  background: rgba(10, 14, 18, 0.55);
+  padding: 4px 10px;
+  border-radius: 6px;
+  animation: feed-fade-in 0.15s ease-out;
+}
+
+@keyframes feed-fade-in {
+  from {
+    opacity: 0;
+    transform: translateX(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.weapon-hud {
+  position: fixed;
+  right: 18px;
+  bottom: 16px;
+  text-align: right;
+  z-index: 10;
+  pointer-events: none;
+  font-family: -apple-system, sans-serif;
+}
+
+.hud-ammo {
+  font-size: 30px;
+  font-weight: 700;
+  color: #f2f5f8;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.6);
+}
+
+.hud-weapon {
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #9fb0c0;
+}
+
+.hud-reload {
+  display: none;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: #ffcf6b;
+  margin-bottom: 2px;
+}
+
 .perf-hud {
   position: fixed;
   top: 10px;

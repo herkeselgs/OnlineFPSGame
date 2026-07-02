@@ -1,9 +1,12 @@
 import { DEFAULT_MAP_ID, MAPS } from "@fps/shared";
 import * as THREE from "three";
+import { CombatSystem } from "./combat/CombatSystem";
+import { Target } from "./combat/Target";
 import { InputManager } from "./engine/InputManager";
 import { PlayerController } from "./engine/PlayerController";
 import { buildMapScene } from "./render/SceneBuilder";
 import { settingsStore } from "./state/settings";
+import { Hud } from "./ui/Hud";
 
 const canvas = document.getElementById("game-canvas") as HTMLCanvasElement;
 const lockOverlay = document.getElementById("lock-overlay") as HTMLDivElement;
@@ -52,7 +55,7 @@ const camera = new THREE.PerspectiveCamera(90, window.innerWidth / window.innerH
 camera.rotation.order = "YXZ";
 
 const map = MAPS[DEFAULT_MAP_ID];
-buildMapScene(scene, map);
+const mapMeshes = buildMapScene(scene, map);
 
 window.addEventListener("resize", () => {
   camera.aspect = window.innerWidth / window.innerHeight;
@@ -66,6 +69,25 @@ const input = new InputManager(canvas, (locked) => {
 });
 
 const player = new PlayerController(map.spawns[0], map.blocks, input);
+
+// --- Combat: dummy targets + weapon system (local-only for now) ---
+const hud = new Hud();
+const combat = new CombatSystem(scene, camera, input, {
+  onHit(killed) {
+    hud.flashHitmarker(killed);
+    if (killed) hud.pushFeed("You eliminated Dummy");
+  },
+});
+combat.setRaycastables([...mapMeshes]);
+
+const dummySpots = [
+  { x: -10, y: 0.85, z: -10 },
+  { x: 10, y: 0.85, z: 10 },
+  { x: 0, y: 0.85, z: -9 },
+];
+for (const spot of dummySpots) {
+  combat.addTarget(new Target(scene, spot));
+}
 
 btnStart.addEventListener("click", () => {
   const mode = settingsStore.get().lookMode;
@@ -109,6 +131,16 @@ function animate(now: number) {
   camera.position.set(eye.x, eye.y, eye.z);
   camera.rotation.x = player.pitch;
   camera.rotation.y = player.yaw;
+  camera.rotation.z = 0;
+
+  combat.update(frameDt);
+  hud.update(frameDt * 1000);
+  hud.updateWeapon(combat.weapon.current.name, combat.weapon.currentAmmo, combat.weapon.current.magazineSize, combat.weapon.isReloading);
+
+  const shake = combat.getShakeOffset();
+  camera.rotation.x += shake.pitch;
+  camera.rotation.y += shake.yaw;
+  camera.rotation.z += shake.roll;
 
   renderer.render(scene, camera);
 
@@ -129,3 +161,9 @@ function animate(now: number) {
 }
 
 requestAnimationFrame(animate);
+
+// Dev-only inspection hook, stripped from production builds by Vite's
+// import.meta.env.DEV dead-code elimination.
+if (import.meta.env.DEV) {
+  (window as unknown as { __debug: unknown }).__debug = { player, camera, combat, scene };
+}

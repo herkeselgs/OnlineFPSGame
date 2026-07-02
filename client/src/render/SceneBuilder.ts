@@ -7,7 +7,7 @@ import * as THREE from "three";
  * Flat MeshLambertMaterial (no PBR, no shadow maps) keeps this cheap on
  * integrated GPUs.
  */
-export function buildMapScene(scene: THREE.Scene, map: MapDefinition): void {
+export function buildMapScene(scene: THREE.Scene, map: MapDefinition): THREE.Mesh[] {
   scene.background = new THREE.Color(map.skyColor);
   scene.fog = new THREE.FogExp2(map.fogColor, map.fogDensity);
 
@@ -31,11 +31,14 @@ export function buildMapScene(scene: THREE.Scene, map: MapDefinition): void {
 
   const geometry = new THREE.BoxGeometry(1, 1, 1);
 
+  const meshes: THREE.Mesh[] = [];
   for (const block of map.blocks) {
     const mesh = new THREE.Mesh(geometry, getMaterial(block.color));
     mesh.scale.set(block.half.x * 2, block.half.y * 2, block.half.z * 2);
     mesh.position.set(block.center.x, block.center.y, block.center.z);
     mesh.userData.blockKind = block.kind;
     scene.add(mesh);
+    meshes.push(mesh);
   }
+  return meshes;
 }

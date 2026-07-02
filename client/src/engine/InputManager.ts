@@ -36,9 +36,9 @@ export class InputManager {
   private pendingLookY = 0;
 
   private settings: Settings;
+  private justPressed = new Set<string>();
 
   public firing = false;
-  public onFireDown?: () => void;
 
   constructor(
     private canvas: HTMLCanvasElement,
@@ -83,6 +83,16 @@ export class InputManager {
     return { yaw, pitch };
   }
 
+  /** Edge-triggered: true exactly once per key-down transition (works for
+   * real KeyboardEvent codes and the virtual "Mouse0" left-click code). Used
+   * for semi-auto fire, reload, and weapon-switch keys where holding the
+   * key shouldn't repeat the action every frame. */
+  consumeJustPressed(code: string): boolean {
+    if (!this.justPressed.has(code)) return false;
+    this.justPressed.delete(code);
+    return true;
+  }
+
   getMoveAxes(): { forward: number; right: number; jump: boolean } {
     let forward = 0;
     let right = 0;
@@ -104,6 +114,7 @@ export class InputManager {
   }
 
   private handleKeyDown = (e: KeyboardEvent) => {
+    if (!this.keys.has(e.code)) this.justPressed.add(e.code);
     this.keys.add(e.code);
   };
 
@@ -114,7 +125,7 @@ export class InputManager {
   private handleMouseDown = (e: MouseEvent) => {
     if (e.button === 0) {
       this.firing = true;
-      this.onFireDown?.();
+      this.justPressed.add("Mouse0");
     }
 
     if (this.settings.lookMode === "pointer-lock") {
