@@ -1,16 +1,24 @@
 import { DEFAULT_MAP_ID, MAPS } from "@fps/shared";
 import * as THREE from "three";
-import { CombatSystem } from "./combat/CombatSystem";
-import { Target } from "./combat/Target";
 import { InputManager } from "./engine/InputManager";
-import { PlayerController } from "./engine/PlayerController";
+import { MatchController } from "./game/MatchController";
+import { PracticeMode } from "./game/PracticeMode";
+import { MultiplayerFlow } from "./net/MultiplayerFlow";
 import { buildMapScene } from "./render/SceneBuilder";
 import { settingsStore } from "./state/settings";
 import { Hud } from "./ui/Hud";
 
+interface GameModeLike {
+  update(frameDt: number): void;
+  getShakeOffset(): { yaw: number; pitch: number; roll: number };
+}
+
 const canvas = document.getElementById("game-canvas") as HTMLCanvasElement;
 const lockOverlay = document.getElementById("lock-overlay") as HTMLDivElement;
+const lockTitle = document.getElementById("lock-title") as HTMLHeadingElement;
 const btnStart = document.getElementById("btn-start") as HTMLButtonElement;
+const btnLeaveMatch = document.getElementById("btn-leave-match") as HTMLButtonElement;
+const btnPractice = document.getElementById("btn-practice") as HTMLButtonElement;
 const perfHud = document.getElementById("perf-hud") as HTMLDivElement;
 
 const looksModeSelect = document.getElementById("look-mode") as HTMLSelectElement;
@@ -63,31 +71,41 @@ window.addEventListener("resize", () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
-// --- Input + player controller ---
+// --- Input + HUD (shared across practice and match modes) ---
 const input = new InputManager(canvas, (locked) => {
   if (locked) lockOverlay.classList.add("hidden");
 });
-
-const player = new PlayerController(map.spawns[0], map.blocks, input);
-
-// --- Combat: dummy targets + weapon system (local-only for now) ---
 const hud = new Hud();
-const combat = new CombatSystem(scene, camera, input, {
-  onHit(killed) {
-    hud.flashHitmarker(killed);
-    if (killed) hud.pushFeed("You eliminated Dummy");
-  },
-});
-combat.setRaycastables([...mapMeshes]);
 
-const dummySpots = [
-  { x: -10, y: 0.85, z: -10 },
-  { x: 10, y: 0.85, z: 10 },
-  { x: 0, y: 0.85, z: -9 },
-];
-for (const spot of dummySpots) {
-  combat.addTarget(new Target(scene, spot));
+// --- Mode management: menu (idle) <-> practice <-> multiplayer match ---
+let activeMode: GameModeLike | null = null;
+let practice: PracticeMode | null = null;
+
+function startPractice(): void {
+  if (practice) practice.dispose();
+  practice = new PracticeMode(scene, camera, input, hud, map, mapMeshes);
+  activeMode = practice;
+  lockTitle.textContent = "Foundry — Practice Mode";
+  lockOverlay.classList.remove("hidden");
 }
+
+function stopPractice(): void {
+  if (!practice) return;
+  if (activeMode === practice) activeMode = null;
+  practice.dispose();
+  practice = null;
+}
+
+btnPractice.addEventListener("click", () => {
+  multiplayer.hideAllScreens();
+  startPractice();
+});
+
+const multiplayer = new MultiplayerFlow(scene, camera, input, hud, mapMeshes, map, (match: MatchController | null) => {
+  stopPractice();
+  activeMode = match;
+  if (match) lockOverlay.classList.add("hidden");
+});
 
 btnStart.addEventListener("click", () => {
   const mode = settingsStore.get().lookMode;
@@ -95,6 +113,17 @@ btnStart.addEventListener("click", () => {
     input.requestPointerLock();
   } else {
     lockOverlay.classList.add("hidden");
+  }
+});
+
+btnLeaveMatch.addEventListener("click", () => {
+  input.exitPointerLock();
+  lockOverlay.classList.add("hidden");
+  if (activeMode === practice) {
+    stopPractice();
+    multiplayer.showMenu();
+  } else {
+    multiplayer.leaveRoom();
   }
 });
 
@@ -106,11 +135,16 @@ canvas.addEventListener("mousedown", () => {
 });
 
 window.addEventListener("keydown", (e) => {
-  if (e.code === "Escape") lockOverlay.classList.remove("hidden");
+  if (e.code !== "Escape") return;
+  if (activeMode === practice) {
+    lockOverlay.classList.remove("hidden");
+  } else {
+    input.exitPointerLock();
+  }
 });
 
 // --- Perf HUD (toggle with F3) ---
-let showPerf = true;
+let showPerf = false;
 window.addEventListener("keydown", (e) => {
   if (e.code === "F3") showPerf = !showPerf;
 });
@@ -125,24 +159,14 @@ function animate(now: number) {
   const frameDt = Math.min((now - last) / 1000, 0.1);
   last = now;
 
-  player.update(frameDt);
-
-  const eye = player.getEyePosition();
-  camera.position.set(eye.x, eye.y, eye.z);
-  camera.rotation.x = player.pitch;
-  camera.rotation.y = player.yaw;
-  camera.rotation.z = 0;
-
-  combat.update(frameDt);
-  hud.update(frameDt * 1000);
-  hud.updateWeapon(combat.weapon.current.name, combat.weapon.currentAmmo, combat.weapon.current.magazineSize, combat.weapon.isReloading);
-
-  const shake = combat.getShakeOffset();
-  camera.rotation.x += shake.pitch;
-  camera.rotation.y += shake.yaw;
-  camera.rotation.z += shake.roll;
-
-  renderer.render(scene, camera);
+  if (activeMode) {
+    activeMode.update(frameDt);
+    const shake = activeMode.getShakeOffset();
+    camera.rotation.x += shake.pitch;
+    camera.rotation.y += shake.yaw;
+    camera.rotation.z += shake.roll;
+    renderer.render(scene, camera);
+  }
 
   frames++;
   fpsAccum += frameDt;
@@ -152,9 +176,13 @@ function animate(now: number) {
     fpsAccum = 0;
   }
 
-  if (showPerf) {
+  if (showPerf && activeMode === practice && practice) {
     perfHud.style.display = "block";
-    perfHud.textContent = `${fps} fps\npos ${player.state.position.x.toFixed(1)}, ${player.state.position.y.toFixed(1)}, ${player.state.position.z.toFixed(1)}\nground ${player.state.onGround}`;
+    const p = practice.player.state;
+    perfHud.textContent = `${fps} fps\npos ${p.position.x.toFixed(1)}, ${p.position.y.toFixed(1)}, ${p.position.z.toFixed(1)}\nground ${p.onGround}`;
+  } else if (showPerf) {
+    perfHud.style.display = "block";
+    perfHud.textContent = `${fps} fps`;
   } else {
     perfHud.style.display = "none";
   }
@@ -162,8 +190,26 @@ function animate(now: number) {
 
 requestAnimationFrame(animate);
 
+multiplayer.showMenu();
+
 // Dev-only inspection hook, stripped from production builds by Vite's
 // import.meta.env.DEV dead-code elimination.
 if (import.meta.env.DEV) {
-  (window as unknown as { __debug: unknown }).__debug = { player, camera, combat, scene };
+  (window as unknown as { __debug: unknown }).__debug = {
+    get practice() {
+      return practice;
+    },
+    get activeMode() {
+      return activeMode;
+    },
+    get player() {
+      return practice?.player;
+    },
+    get combat() {
+      return practice?.combat;
+    },
+    camera,
+    scene,
+    multiplayer,
+  };
 }

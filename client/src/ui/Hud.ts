@@ -7,6 +7,10 @@ export class Hud {
   private reloadEl = document.getElementById("hud-reload") as HTMLDivElement;
   private hitmarkerEl = document.getElementById("hitmarker") as HTMLDivElement;
   private feedEl = document.getElementById("kill-feed") as HTMLDivElement;
+  private healthEl = document.getElementById("hud-health") as HTMLDivElement;
+  private deathOverlayEl = document.getElementById("death-overlay") as HTMLDivElement;
+  private scoreEl = document.getElementById("hud-score") as HTMLDivElement;
+  private timerEl = document.getElementById("hud-timer") as HTMLDivElement;
 
   private hitmarkerRemainingMs = 0;
 
@@ -14,6 +18,31 @@ export class Hud {
     this.weaponNameEl.textContent = name;
     this.ammoEl.textContent = `${ammo} / ${magSize}`;
     this.reloadEl.style.display = reloading ? "block" : "none";
+  }
+
+  updateHealth(health: number): void {
+    this.healthEl.textContent = String(Math.max(0, Math.round(health)));
+  }
+
+  setDead(dead: boolean, respawnInMs: number): void {
+    if (!dead) {
+      this.deathOverlayEl.style.display = "none";
+      return;
+    }
+    this.deathOverlayEl.style.display = "flex";
+    const secs = Math.max(0, Math.ceil(respawnInMs / 1000));
+    this.deathOverlayEl.textContent = secs > 0 ? `Respawning in ${secs}...` : "Respawning...";
+  }
+
+  updateScore(selfName: string, selfScore: number, oppName: string, oppScore: number): void {
+    this.scoreEl.textContent = `${selfName} ${selfScore} — ${oppScore} ${oppName}`;
+  }
+
+  updateTimer(remainingMs: number): void {
+    const total = Math.max(0, Math.ceil(remainingMs / 1000));
+    const m = Math.floor(total / 60);
+    const s = total % 60;
+    this.timerEl.textContent = `${m}:${s.toString().padStart(2, "0")}`;
   }
 
   flashHitmarker(killed: boolean): void {

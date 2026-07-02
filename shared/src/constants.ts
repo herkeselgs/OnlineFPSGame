@@ -46,6 +46,8 @@ export const RESPAWN_TIME_MS = 3000;
 export const SPAWN_PROTECTION_MS = 1500;
 export const MATCH_DURATION_MS = 5 * 60 * 1000;
 export const MATCH_SCORE_LIMIT = 20;
+export const MATCH_COUNTDOWN_MS = 3000;
+export const RESULTS_DISPLAY_MS = 8000;
 
 // --- Room codes ---
 // Unambiguous charset: no 0/O, 1/I/l — easy to read aloud or text.

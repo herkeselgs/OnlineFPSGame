@@ -11,10 +11,21 @@
 
     <div id="crosshair" class="crosshair"></div>
     <div id="hitmarker" class="hitmarker"></div>
+    <div id="death-overlay" class="death-overlay"></div>
 
     <div id="perf-hud" class="perf-hud"></div>
 
     <div id="kill-feed" class="kill-feed"></div>
+
+    <div id="hud-top" class="hud-top">
+      <div id="hud-score" class="hud-score"></div>
+      <div id="hud-timer" class="hud-timer"></div>
+    </div>
+
+    <div id="hud-health-wrap" class="hud-health-wrap">
+      <div id="hud-health" class="hud-health">100</div>
+      <div class="hud-health-label">HP</div>
+    </div>
 
     <div id="weapon-hud" class="weapon-hud">
       <div id="hud-reload" class="hud-reload">RELOADING</div>
@@ -24,9 +35,10 @@
 
     <div id="lock-overlay" class="lock-overlay">
       <div class="lock-panel">
-        <h1>Foundry — Combat Test</h1>
+        <h1 id="lock-title">Foundry — Combat Test</h1>
         <p>WASD to move, Space to jump, mouse/trackpad to look. Left click to fire, R to reload, 1/2/3 to switch weapons.</p>
         <button id="btn-start" class="btn-primary">Click to Play</button>
+        <button id="btn-leave-match" class="btn-secondary">Leave to Menu</button>
 
         <div class="dev-settings">
           <label class="row">
@@ -49,6 +61,58 @@
             <input id="invert-y" type="checkbox" />
           </label>
         </div>
+      </div>
+    </div>
+
+    <div id="screen-menu" class="screen">
+      <div class="screen-panel">
+        <h1>Duel</h1>
+        <p class="subtitle">Trackpad-friendly 1v1 browser FPS</p>
+
+        <label class="row">
+          <span>Your name</span>
+          <input id="player-name" type="text" maxlength="16" placeholder="Player" />
+        </label>
+
+        <button id="btn-create-room" class="btn-primary">Create Room</button>
+
+        <div class="join-row">
+          <input id="join-code-input" type="text" maxlength="5" placeholder="CODE" class="code-input" />
+          <button id="btn-join-room" class="btn-primary">Join</button>
+        </div>
+
+        <button id="btn-practice" class="btn-secondary">Practice (offline)</button>
+
+        <div id="menu-error" class="menu-error"></div>
+      </div>
+    </div>
+
+    <div id="screen-lobby" class="screen hidden">
+      <div class="screen-panel">
+        <h1>Room <span id="lobby-code"></span></h1>
+        <p class="subtitle">Share this code or link with a friend</p>
+        <div class="share-row">
+          <input id="share-link" type="text" readonly class="code-input" />
+          <button id="btn-copy-link" class="btn-secondary">Copy</button>
+        </div>
+
+        <div id="lobby-players" class="lobby-players"></div>
+
+        <button id="btn-ready" class="btn-primary">Ready</button>
+        <button id="btn-leave-lobby" class="btn-secondary">Leave Room</button>
+      </div>
+    </div>
+
+    <div id="screen-countdown" class="screen hidden">
+      <div class="countdown-number" id="countdown-number">3</div>
+    </div>
+
+    <div id="screen-results" class="screen hidden">
+      <div class="screen-panel">
+        <h1 id="results-title">Match Over</h1>
+        <div id="results-scores" class="results-scores"></div>
+        <button id="btn-rematch" class="btn-primary">Ready for Rematch</button>
+        <button id="btn-results-menu" class="btn-secondary">Back to Menu</button>
       </div>
     </div>
 

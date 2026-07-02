@@ -25,6 +25,45 @@ export const aabbOverlaps = (
   Math.abs(posA.y - posB.y) < halfA.y + halfB.y &&
   Math.abs(posA.z - posB.z) < halfA.z + halfB.z;
 
+/**
+ * Ray-vs-AABB slab test. Returns the distance along `dir` (assumed
+ * normalized) to the nearest intersection, or null if the ray misses or the
+ * box is beyond `maxDist`. Used server-side for authoritative hitscan
+ * validation against both static map geometry and (lag-compensated) player
+ * hitboxes — the exact same box colliders used for movement collision, so
+ * "what blocks a bullet" and "what blocks a player" never disagree.
+ */
+export function rayIntersectsBox(
+  origin: Vec3,
+  dir: Vec3,
+  box: BoxCollider,
+  maxDist = Infinity
+): number | null {
+  let tmin = -Infinity;
+  let tmax = Infinity;
+
+  for (const axis of AXES) {
+    const o = origin[axis];
+    const d = dir[axis];
+    const min = box.center[axis] - box.half[axis];
+    const max = box.center[axis] + box.half[axis];
+
+    if (Math.abs(d) < 1e-9) {
+      if (o < min || o > max) return null;
+      continue;
+    }
+    let t1 = (min - o) / d;
+    let t2 = (max - o) / d;
+    if (t1 > t2) [t1, t2] = [t2, t1];
+    tmin = Math.max(tmin, t1);
+    tmax = Math.min(tmax, t2);
+    if (tmin > tmax) return null;
+  }
+
+  if (tmax < 0 || tmin > maxDist) return null;
+  return tmin >= 0 ? tmin : tmax;
+}
+
 export interface AxisMoveResult {
   position: number;
   velocity: number;

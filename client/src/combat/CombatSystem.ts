@@ -1,9 +1,9 @@
-import { WeaponId } from "@fps/shared";
+import { WeaponId, WeaponState } from "@fps/shared";
 import * as THREE from "three";
 import { InputManager } from "../engine/InputManager";
 import { MuzzleFlashEffect, ScreenShake, TracerPool } from "../render/effects";
+import { randomSpreadDirection } from "./spread";
 import { Target } from "./Target";
-import { WeaponController } from "./WeaponController";
 
 const SWITCH_KEYS: Record<string, WeaponId> = {
   Digit1: "rifle",
@@ -22,7 +22,7 @@ export interface CombatEvents {
  * server-authoritative validation on top rather than replacing it.
  */
 export class CombatSystem {
-  readonly weapon = new WeaponController();
+  readonly weapon = new WeaponState();
   readonly targets: Target[] = [];
 
   private raycaster = new THREE.Raycaster();
@@ -97,7 +97,7 @@ export class CombatSystem {
     let anyHit = false;
     let anyKill = false;
 
-    for (let i = 0; i < result.pelletDirOffsets; i++) {
+    for (let i = 0; i < result.pelletCount; i++) {
       const dir = randomSpreadDirection(forward, right, up, def.spreadRadians);
       this.raycaster.set(origin, dir);
       this.raycaster.far = def.range;
@@ -117,24 +117,4 @@ export class CombatSystem {
 
     if (anyHit) this.events.onHit(anyKill);
   }
-}
-
-/** Uniform random direction within a small cone around `forward`, built from
- * the camera's own right/up basis vectors (small-angle approximation —
- * accurate enough for the spread angles our weapons use, a few degrees at
- * most). */
-function randomSpreadDirection(
-  forward: THREE.Vector3,
-  right: THREE.Vector3,
-  up: THREE.Vector3,
-  maxAngle: number
-): THREE.Vector3 {
-  if (maxAngle <= 0) return forward.clone();
-  const r = Math.sqrt(Math.random()) * maxAngle;
-  const theta = Math.random() * Math.PI * 2;
-  return forward
-    .clone()
-    .addScaledVector(right, Math.cos(theta) * r)
-    .addScaledVector(up, Math.sin(theta) * r)
-    .normalize();
 }

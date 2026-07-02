@@ -4,3 +4,7 @@ export * from "./constants.js";
 export * from "./movement.js";
 export * from "./maps.js";
 export * from "./weapons.js";
+export * from "./weaponState.js";
+export * from "./playerCombatState.js";
+export * from "./positionHistory.js";
+export * from "./protocol.js";

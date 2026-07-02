@@ -64,4 +64,9 @@ export class Target {
     this.mesh.visible = true;
     this.mesh.position.set(this.spawnPosition.x, this.spawnPosition.y, this.spawnPosition.z);
   }
+
+  dispose(scene: THREE.Scene): void {
+    scene.remove(this.mesh);
+    this.material.dispose();
+  }
 }

@@ -227,3 +227,236 @@ html, body {
 .dev-settings input[type="range"] {
   max-width: 55%;
 }
+
+.btn-secondary {
+  appearance: none;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 10px;
+  padding: 10px 20px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #d7dfe6;
+  background: rgba(255, 255, 255, 0.04);
+  cursor: pointer;
+  width: 100%;
+  margin-top: 10px;
+  transition: transform 0.08s ease, background 0.15s ease;
+}
+
+.btn-secondary:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.btn-secondary:active {
+  transform: scale(0.97);
+}
+
+/* --- Match HUD extras --- */
+
+.hud-top {
+  position: fixed;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  z-index: 10;
+  pointer-events: none;
+  font-family: -apple-system, sans-serif;
+}
+
+.hud-score {
+  font-size: 15px;
+  font-weight: 700;
+  color: #f2f5f8;
+  background: rgba(10, 14, 18, 0.5);
+  padding: 5px 14px;
+  border-radius: 8px;
+}
+
+.hud-timer {
+  font: 15px/1 ui-monospace, monospace;
+  color: #cfd8e0;
+  background: rgba(10, 14, 18, 0.5);
+  padding: 5px 10px;
+  border-radius: 8px;
+}
+
+.hud-health-wrap {
+  position: fixed;
+  left: 18px;
+  bottom: 16px;
+  z-index: 10;
+  pointer-events: none;
+  font-family: -apple-system, sans-serif;
+}
+
+.hud-health {
+  font-size: 30px;
+  font-weight: 700;
+  color: #ff6b5e;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.6);
+}
+
+.hud-health-label {
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  color: #9fb0c0;
+}
+
+.death-overlay {
+  position: fixed;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(80, 8, 8, 0.28);
+  color: #f8dede;
+  font-size: 22px;
+  font-weight: 700;
+  z-index: 15;
+  pointer-events: none;
+}
+
+/* --- Screens: menu / lobby / countdown / results --- */
+
+.screen {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle at 50% 40%, #16202b, #070a0d 75%);
+  z-index: 30;
+}
+
+.screen.hidden {
+  display: none;
+}
+
+.screen-panel {
+  width: min(420px, 90vw);
+  background: rgba(20, 27, 36, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  padding: 30px;
+  text-align: center;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+.screen-panel h1 {
+  font-size: 26px;
+  margin-bottom: 6px;
+}
+
+.screen-panel .subtitle {
+  font-size: 13px;
+  color: #9fb0c0;
+  margin-bottom: 22px;
+}
+
+.screen-panel .row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+  gap: 10px;
+  margin-bottom: 14px;
+  text-align: left;
+}
+
+.screen-panel input[type="text"] {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  color: #f2f5f8;
+  padding: 8px 10px;
+  font-size: 14px;
+  width: 60%;
+}
+
+.code-input {
+  width: 100% !important;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  text-align: center;
+  font-weight: 700;
+}
+
+.join-row,
+.share-row {
+  display: flex;
+  gap: 8px;
+  margin: 14px 0;
+}
+
+.join-row .btn-primary,
+.share-row .btn-secondary {
+  width: auto;
+  white-space: nowrap;
+  margin-top: 0;
+}
+
+.menu-error {
+  min-height: 18px;
+  color: #ff8a80;
+  font-size: 13px;
+  margin-top: 10px;
+}
+
+.lobby-players {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.lobby-player-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 14px;
+}
+
+.lobby-player-row .status-ready {
+  color: #7de08a;
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.lobby-player-row .status-waiting {
+  color: #9fb0c0;
+  font-size: 12px;
+}
+
+.countdown-number {
+  font-size: 140px;
+  font-weight: 800;
+  color: #f2f5f8;
+  text-shadow: 0 0 40px rgba(159, 240, 138, 0.5);
+}
+
+.results-scores {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 22px;
+}
+
+.results-score-row {
+  display: flex;
+  justify-content: space-between;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 14px;
+}
+
+.results-score-row.is-winner {
+  background: rgba(159, 240, 138, 0.14);
+  border: 1px solid rgba(159, 240, 138, 0.3);
+}
