@@ -9,7 +9,23 @@ import { NetClient } from "./NetClient";
 
 export type LoadMapFn = (mapId: string) => { map: MapDefinition; meshes: THREE.Mesh[] };
 
-const WS_URL = (import.meta.env.VITE_WS_URL as string | undefined) ?? `ws://${location.hostname}:8787/ws`;
+const WS_URL = resolveWsUrl();
+
+/** In dev, falls back to a local server on :8787. In production this must be
+ * set via VITE_WS_URL (baked in at build time) — a same-origin guess would be
+ * wrong anyway since the client and server deploy to different hosts. */
+function resolveWsUrl(): string {
+  const configured = import.meta.env.VITE_WS_URL as string | undefined;
+  if (configured) return configured;
+  if (location.protocol === "https:") {
+    console.warn(
+      "[fps] VITE_WS_URL was not set at build time and this page is served over HTTPS — " +
+        "falling back to an insecure ws:// URL, which browsers will block. " +
+        "Set VITE_WS_URL to your server's wss://.../ws URL and redeploy."
+    );
+  }
+  return `ws://${location.hostname}:8787/ws`;
+}
 
 function randomDefaultName(): string {
   return `Player${Math.floor(1000 + Math.random() * 9000)}`;

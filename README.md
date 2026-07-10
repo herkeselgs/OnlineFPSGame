@@ -53,26 +53,76 @@ See `shared/src/protocol.ts` for the full client↔server message contract if yo
 
 ## Deploying so friends can actually play
 
-Locally everything talks to `localhost`, which only works for you. To let friends join from elsewhere you need the client and server hosted somewhere public. Recommended split (matches the brief this was built to):
+Locally everything talks to `localhost`, which only works for you. To let friends join from elsewhere you need the client and server hosted somewhere public.
 
-**Server → Railway, Fly.io, or Render** (anything that runs a persistent Node process — the game server holds live WebSocket connections and in-memory room state, so it needs to be a long-running process, not a serverless function).
+This is an **npm workspaces monorepo** (`shared` / `server` / `client`), so both hosts need to install dependencies from the **repo root** (not from inside the subfolder) so the `@fps/shared` workspace package resolves. The steps below account for that.
 
-1. Deploy the `server/` directory (`npm run build -w server` produces `server/dist/index.js`; start command is `node dist/index.js`).
-2. Set the `PORT` env var if your host requires a specific one (most inject this automatically).
-3. Note the public URL your host gives you, e.g. `https://your-app.up.railway.app`.
+Recommended split: **client → Vercel**, **server → Railway**. The server holds live WebSocket connections and in-memory room state, so it needs a persistent Node process — Railway (or Fly.io/Render, which work the same way) — not a serverless function.
 
-**Client → Vercel** (or Netlify/Cloudflare Pages — it's a static Vite build, any static host works).
+### 1. Server → Railway
 
-1. Deploy the `client/` directory. Build command: `npm run build`. Output directory: `client/dist`.
-2. Set the environment variable `VITE_WS_URL` to your server's WebSocket URL, using `wss://` (secure) since Vercel serves over HTTPS and browsers block insecure `ws://` connections from an HTTPS page:
+1. Go to [railway.app](https://railway.app) and sign in (GitHub login is easiest since this repo is already on GitHub).
+2. Click **New Project → Deploy from GitHub repo**, and pick this repository. Authorize Railway's GitHub App if prompted.
+3. Once the service is created, open it and go to **Settings**:
+   - **Root Directory**: leave as `/` (the repo root) — do *not* point it at `server/`. The repo includes a `railway.json` at the root that tells Railway how to build and start the server correctly from there (`npm install && npm run build -w server` to build, `npm run start -w server` to run). Railway auto-detects this file, so you shouldn't need to type build/start commands manually — but if the fields are blank, set them to those two commands.
+   - **Networking**: click **Generate Domain** to get a public URL like `your-app.up.railway.app`, so you can verify the deploy before touching DNS.
+4. Go to the **Deployments** tab and wait for the build to finish. Confirm it's healthy by visiting `https://your-app.up.railway.app/health` — you should see `{"ok":true,"service":"fps-server","rooms":0}`.
+5. You generally don't need to set a `PORT` variable — Railway injects one automatically and the server already reads `process.env.PORT`.
+
+### 2. Client → Vercel
+
+1. Go to [vercel.com](https://vercel.com) and sign in with GitHub.
+2. Click **Add New… → Project**, and import this repository.
+3. On the **Configure Project** screen:
+   - **Root Directory**: click **Edit** and set it to `client`. Vercel will detect the npm workspaces setup and still run `npm install` from the repo root automatically, so `@fps/shared` resolves correctly.
+   - **Framework Preset**: should auto-detect as **Vite**. The repo also includes `client/vercel.json` pinning the build command (`npm run build`) and output directory (`dist`), so these fields should already be filled in correctly.
+4. Expand **Environment Variables** and add:
    ```
-   VITE_WS_URL=wss://your-app.up.railway.app/ws
+   VITE_WS_URL = wss://your-app.up.railway.app/ws
    ```
-3. Redeploy after setting the env var (Vite bakes it in at build time).
+   (use the Railway domain from step 1, with `wss://` and the `/ws` path — Vite bakes this in at build time, so it must be set here, not left for runtime).
+5. Click **Deploy**. Once it finishes, open the Vercel URL and confirm you can create a room (open the browser console — if you see the `VITE_WS_URL was not set` warning, the env var didn't take; double check step 4 and redeploy).
 
-No CORS configuration is needed — the game server doesn't serve cross-origin HTTP requests the client depends on, and WebSocket upgrade requests aren't subject to CORS the way `fetch` is.
+No CORS configuration is needed anywhere — the game server doesn't serve cross-origin HTTP requests the client depends on, and WebSocket upgrade requests aren't subject to CORS the way `fetch` is.
 
-**Rooms are in-memory.** A server restart (redeploy, host cycling a dormant instance, etc.) drops any live rooms. Fine for a casual game with no accounts; worth knowing if you scale this up later.
+**Rooms are in-memory.** A server restart (redeploy, Railway cycling a dormant instance, etc.) drops any live rooms. Fine for a casual game with no accounts; worth knowing if you scale this up later.
+
+### 3. Pointing folvra.com at it
+
+Recommended split: the client on the apex domain (`folvra.com`) and `www`, the server on a subdomain (`api.folvra.com`) — Railway can't usefully serve a bare apex domain, and keeping the WebSocket server on its own subdomain avoids apex-domain complications entirely.
+
+**Client domain (in the Vercel dashboard):**
+
+1. Open your project → **Settings → Domains**.
+2. Add `folvra.com` and `www.folvra.com`.
+3. Vercel will show you the *exact* DNS records to add, tailored to your account — add these at your domain registrar's DNS settings (wherever you bought `folvra.com`):
+   - For the apex `folvra.com`: an **A record** at the root (`@`) pointing at the IP Vercel displays (historically `76.76.21.21`, but always use the value shown in your dashboard — it can change).
+   - For `www.folvra.com`: a **CNAME record** with host `www` pointing at `cname.vercel-dns.com`.
+4. Vercel auto-issues an SSL certificate once DNS propagates (usually minutes, can take up to ~24h). The Domains page shows a green check when it's live.
+
+**Server domain (in the Railway dashboard):**
+
+1. Open your service → **Settings → Networking → Custom Domain**.
+2. Enter `api.folvra.com` and click **Add**.
+3. Railway will display a **CNAME target** unique to your service (something like `xxxxxxxx.up.railway.app` or a Railway-managed hostname) — copy it exactly.
+4. At your domain registrar, add a **CNAME record** with host `api` pointing at that target.
+5. Wait for DNS propagation and for Railway to show the domain as verified with a valid TLS certificate (also usually minutes, occasionally longer).
+
+**Summary of DNS records to add at your registrar** (exact target values come from each dashboard, not listed here since they're account-specific):
+
+| Host | Type | Points to | Purpose |
+|---|---|---|---|
+| `@` (apex `folvra.com`) | A | IP shown in Vercel's Domains page | Client |
+| `www` | CNAME | `cname.vercel-dns.com` | Client (www) |
+| `api` | CNAME | Hostname shown in Railway's Custom Domain page | Server (WebSocket) |
+
+**After DNS is live**, update the client's `VITE_WS_URL` env var in Vercel to use the real domain instead of the `*.up.railway.app` one, then redeploy:
+
+```
+VITE_WS_URL=wss://api.folvra.com/ws
+```
+
+Some registrars don't support A records at the apex (only CNAME/ALIAS) — if yours doesn't, use `www.folvra.com` as the primary URL you share (redirecting bare `folvra.com` isn't required for the game to work, just a nicety) or check whether your registrar offers an ALIAS/ANAME record type, which behaves like a CNAME but is legal at the apex.
 
 ## What's built
 
