@@ -99,8 +99,8 @@ export type ServerMessage =
       serverTime: number;
       players: PlayerSnapshot[];
     }
-  | { type: "hit_confirmed"; targetId: PlayerId; damage: number; killed: boolean }
-  | { type: "kill_feed"; killerId: PlayerId | null; victimId: PlayerId; weapon: WeaponId }
+  | { type: "hit_confirmed"; targetId: PlayerId; damage: number; killed: boolean; headshot: boolean }
+  | { type: "kill_feed"; killerId: PlayerId | null; victimId: PlayerId; weapon: WeaponId; headshot: boolean }
   | {
       type: "match_ended";
       scores: MatchScoreEntry[];

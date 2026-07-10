@@ -44,6 +44,29 @@ export const JUMP_SPEED = 7.8;
  * collision being axis-aligned boxes only (no sloped ramps). */
 export const STEP_HEIGHT = 0.55;
 
+// --- Ladder climbing ---
+/** Vertical speed while climbing, roughly matching normal walk speed so
+ * ladders don't feel like a shortcut or a penalty. */
+export const CLIMB_SPEED = 4.2;
+
+// --- Headshot hitbox ---
+// Movement/body collision still uses one uniform box (PLAYER_HALF_EXTENTS,
+// unchanged) — these only apply to hit *detection*, which tests two
+// non-overlapping boxes stacked in Y instead: a torso box up to
+// HEAD_BAND_MIN_Y, and a narrower head box above it. They must not overlap
+// in Y — if they did, a ray entering through the (wider) torso box's front
+// face would always win over the (narrower, recessed) head box, since the
+// torso's near face is physically closer along most firing angles. Disjoint
+// Y-ranges mean whichever height the ray actually lands at is the one it
+// can hit, full stop.
+export const HEAD_HALF_WIDTH = 0.22; // x/z half-extent of the head box
+export const HEAD_BAND_MIN_Y = 0.58; // offset above the body's center; top of the torso box
+export const HEAD_BAND_MAX_Y = PLAYER_HALF_EXTENTS.y; // top of the head box (matches the movement box's top)
+/** Chosen so headshots meaningfully cut TTK (e.g. rifle: 3 body hits -> 2
+ * headshots) without one-shotting from full health with any weapon's single
+ * hit — still requires consecutive precision, not a coinflip. */
+export const HEADSHOT_DAMAGE_MULTIPLIER = 2;
+
 // --- Gameplay ---
 export const MAX_HEALTH = 100;
 export const RESPAWN_TIME_MS = 3000;

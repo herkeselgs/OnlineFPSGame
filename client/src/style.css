@@ -84,6 +84,20 @@ html, body {
   background: #ff5450;
 }
 
+.hitmarker-headshot {
+  transform: scale(1.3);
+}
+
+.hitmarker-headshot::before,
+.hitmarker-headshot::after {
+  background: #ffd23f;
+}
+
+.hitmarker-headshot.hitmarker-kill::before,
+.hitmarker-headshot.hitmarker-kill::after {
+  background: #ff9d1f;
+}
+
 .kill-feed {
   position: fixed;
   top: 14px;

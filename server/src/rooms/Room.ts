@@ -1,9 +1,10 @@
 import {
   applyDamage,
-  BoxCollider,
   ClientMessage,
   createPlayerCombatState,
   DEFAULT_MAP_ID,
+  headHitBox,
+  HEADSHOT_DAMAGE_MULTIPLIER,
   INTERP_DELAY_MS,
   MAPS,
   MATCH_COUNTDOWN_MS,
@@ -24,6 +25,7 @@ import {
   SIM_HZ,
   SNAPSHOT_HZ,
   stepPlayerMovement,
+  torsoHitBox,
   Vec3,
   WeaponDef,
   WeaponState,
@@ -280,30 +282,43 @@ export class Room {
     }
 
     let bestTarget: PlayerSession | null = null;
+    let bestIsHeadshot = false;
     for (const [id, target] of this.players) {
       if (id === shooter.id || !target.combat.alive) continue;
       const sample = target.history.sampleAt(rewindTime) ?? target.history.latest();
       if (!sample) continue;
-      const box: BoxCollider = { center: sample.position, half: PLAYER_HALF_EXTENTS };
-      const d = rayIntersectsBox(origin, dir, box, nearestDist);
-      if (d !== null && d < nearestDist) {
-        nearestDist = d;
+
+      const torso = rayIntersectsBox(origin, dir, torsoHitBox(sample.position), nearestDist);
+      if (torso !== null && torso < nearestDist) {
+        nearestDist = torso;
         bestTarget = target;
+        bestIsHeadshot = false;
+      }
+      const head = rayIntersectsBox(origin, dir, headHitBox(sample.position), nearestDist);
+      if (head !== null && head < nearestDist) {
+        nearestDist = head;
+        bestTarget = target;
+        bestIsHeadshot = true;
       }
     }
 
     if (!bestTarget) return;
-    const dmg = applyDamage(bestTarget.combat, weaponDef.damage, nowMs);
+
+    const headshot = bestIsHeadshot;
+    const damage = headshot ? weaponDef.damage * HEADSHOT_DAMAGE_MULTIPLIER : weaponDef.damage;
+
+    const dmg = applyDamage(bestTarget.combat, damage, nowMs);
     if (!dmg.applied) return;
 
     shooter.shotsHit += 1;
-    shooter.damageDealt += weaponDef.damage;
+    shooter.damageDealt += damage;
 
     this.send(shooter.id, {
       type: "hit_confirmed",
       targetId: bestTarget.id,
-      damage: weaponDef.damage,
+      damage,
       killed: dmg.killed,
+      headshot,
     });
 
     if (dmg.killed) {
@@ -314,6 +329,7 @@ export class Room {
         killerId: shooter.id,
         victimId: bestTarget.id,
         weapon: weaponDef.id,
+        headshot,
       });
     }
   }

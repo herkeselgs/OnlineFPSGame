@@ -1,3 +1,4 @@
+import { HEAD_BAND_MAX_Y, HEAD_BAND_MIN_Y, HEAD_HALF_WIDTH, PLAYER_HALF_EXTENTS, PLAYER_RADIUS } from "./constants.js";
 import { Vec3 } from "./vec.js";
 
 /** Axis-aligned static collider box, defined by center + half-extents.
@@ -62,6 +63,33 @@ export function rayIntersectsBox(
 
   if (tmax < 0 || tmin > maxDist) return null;
   return tmin >= 0 ? tmin : tmax;
+}
+
+/** The torso hit box for a player centered at `bodyCenter`: same width as
+ * the movement box, but only up to HEAD_BAND_MIN_Y — the head box (below)
+ * picks up everything above that. Used only for hit detection, never
+ * movement/collision (which keeps using one uniform PLAYER_HALF_EXTENTS
+ * box, unchanged). */
+export function torsoHitBox(bodyCenter: Vec3): BoxCollider {
+  const yMin = -PLAYER_HALF_EXTENTS.y;
+  const yMax = HEAD_BAND_MIN_Y;
+  return {
+    center: { x: bodyCenter.x, y: bodyCenter.y + (yMin + yMax) / 2, z: bodyCenter.z },
+    half: { x: PLAYER_RADIUS, y: (yMax - yMin) / 2, z: PLAYER_RADIUS },
+  };
+}
+
+/** The head hit box: narrower than the torso, stacked directly on top of it
+ * with no gap and no overlap (see constants.ts for why the two must stay
+ * disjoint in Y — an overlapping narrower box would never win a nearest-hit
+ * test against the wider torso box surrounding it). */
+export function headHitBox(bodyCenter: Vec3): BoxCollider {
+  const yMin = HEAD_BAND_MIN_Y;
+  const yMax = HEAD_BAND_MAX_Y;
+  return {
+    center: { x: bodyCenter.x, y: bodyCenter.y + (yMin + yMax) / 2, z: bodyCenter.z },
+    half: { x: HEAD_HALF_WIDTH, y: (yMax - yMin) / 2, z: HEAD_HALF_WIDTH },
+  };
 }
 
 export interface AxisMoveResult {

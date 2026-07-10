@@ -1,4 +1,4 @@
-import { WeaponId, WeaponState } from "@fps/shared";
+import { HEADSHOT_DAMAGE_MULTIPLIER, WeaponId, WeaponState } from "@fps/shared";
 import * as THREE from "three";
 import { soundEngine } from "../audio/SoundEngine";
 import { InputManager } from "../engine/InputManager";
@@ -14,7 +14,7 @@ const SWITCH_KEYS: Record<string, WeaponId> = {
 };
 
 export interface CombatEvents {
-  onHit(killed: boolean): void;
+  onHit(killed: boolean, headshot: boolean): void;
 }
 
 /**
@@ -50,7 +50,7 @@ export class CombatSystem {
 
   addTarget(target: Target): void {
     this.targets.push(target);
-    this.raycastables.push(target.mesh);
+    this.raycastables.push(target.mesh, target.headMesh);
   }
 
   /** dt in seconds (matches the render loop), used for shake decay. */
@@ -111,6 +111,7 @@ export class CombatSystem {
 
     let anyHit = false;
     let anyKill = false;
+    let anyHeadshot = false;
 
     for (let i = 0; i < result.pelletCount; i++) {
       const dir = randomSpreadDirection(forward, right, up, def.spreadRadians);
@@ -126,13 +127,20 @@ export class CombatSystem {
       if (!targetRef) continue;
 
       anyHit = true;
-      const killed = targetRef.applyDamage(def.damage);
+      // Practice mode has both the body and head as separate raycastable
+      // meshes (unlike the server, which has no visual geometry to check
+      // against and needs the box-based classification instead) — which one
+      // Three.js actually hit IS the headshot classification here.
+      const headshot = hits[0].object === targetRef.headMesh;
+      const damage = headshot ? def.damage * HEADSHOT_DAMAGE_MULTIPLIER : def.damage;
+      const killed = targetRef.applyDamage(damage);
       if (killed) anyKill = true;
+      if (headshot) anyHeadshot = true;
     }
 
     if (anyHit) {
-      soundEngine.playHitmarker(anyKill);
-      this.events.onHit(anyKill);
+      soundEngine.playHitmarker(anyKill, anyHeadshot);
+      this.events.onHit(anyKill, anyHeadshot);
     }
   }
 }

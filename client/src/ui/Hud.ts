@@ -50,9 +50,10 @@ export class Hud {
     this.timerEl.textContent = `${m}:${s.toString().padStart(2, "0")}`;
   }
 
-  flashHitmarker(killed: boolean): void {
+  flashHitmarker(killed: boolean, headshot = false): void {
     this.hitmarkerRemainingMs = HITMARKER_DURATION_MS;
     this.hitmarkerEl.classList.toggle("hitmarker-kill", killed);
+    this.hitmarkerEl.classList.toggle("hitmarker-headshot", headshot);
     this.hitmarkerEl.style.opacity = "1";
   }
 

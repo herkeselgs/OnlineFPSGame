@@ -63,12 +63,18 @@ export class SoundEngine {
     this.noiseBurst({ freq: 2200, q: 3, type: "bandpass", duration: 0.03, gain: 0.22 });
   }
 
-  playHitmarker(killed: boolean): void {
+  playHitmarker(killed: boolean, headshot = false): void {
     if (!this.ready()) return;
+    // Headshot ping is layered independently of kill/body-hit tone below, so
+    // a headshot kill gets both the bright "ding" and the kill confirmation.
+    if (headshot) {
+      this.tone({ freq: 1900, duration: 0.045, gain: 0.32, type: "sine" });
+      this.tone({ freq: 2600, duration: 0.05, gain: 0.22, type: "sine", delaySec: 0.03 });
+    }
     if (killed) {
       this.tone({ freq: 700, duration: 0.05, gain: 0.3, type: "triangle" });
       this.tone({ freq: 1100, duration: 0.08, gain: 0.32, type: "triangle", delaySec: 0.045 });
-    } else {
+    } else if (!headshot) {
       this.tone({ freq: 1300, duration: 0.035, gain: 0.22, type: "triangle" });
     }
   }

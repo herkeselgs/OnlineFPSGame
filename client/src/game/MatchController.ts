@@ -134,11 +134,11 @@ export class MatchController {
         this.clock.ingestServerTime(msg.serverTime);
         break;
       case "hit_confirmed":
-        this.hud.flashHitmarker(msg.killed);
-        soundEngine.playHitmarker(msg.killed);
+        this.hud.flashHitmarker(msg.killed, msg.headshot);
+        soundEngine.playHitmarker(msg.killed, msg.headshot);
         break;
       case "kill_feed":
-        this.pushKillFeed(msg.killerId, msg.victimId);
+        this.pushKillFeed(msg.killerId, msg.victimId, msg.headshot);
         break;
       default:
         break;
@@ -155,7 +155,7 @@ export class MatchController {
       if (!rp) {
         rp = new RemotePlayer(this.scene, p.id, this.playerNames.get(p.id) ?? "Player");
         this.remotePlayersMap.set(p.id, rp);
-        this.raycastables.push(rp.mesh);
+        this.raycastables.push(rp.mesh, rp.headMesh);
       }
       rp.ingestSnapshot(p.position, p.yaw, serverTimeMs, p.health, p.alive, p.weapon, p.color, p.kills, p.deaths);
     }
@@ -176,11 +176,12 @@ export class MatchController {
     }
   }
 
-  private pushKillFeed(killerId: PlayerId | null, victimId: PlayerId): void {
+  private pushKillFeed(killerId: PlayerId | null, victimId: PlayerId, headshot: boolean): void {
     const name = (id: PlayerId) => (id === this.selfId ? "You" : this.playerNames.get(id) ?? "Player");
-    if (killerId === this.selfId) this.hud.pushFeed(`You eliminated ${name(victimId)}`);
-    else if (victimId === this.selfId) this.hud.pushFeed(`${killerId ? name(killerId) : "World"} eliminated you`);
-    else this.hud.pushFeed(`${killerId ? name(killerId) : "World"} eliminated ${name(victimId)}`);
+    const suffix = headshot ? " (headshot)" : "";
+    if (killerId === this.selfId) this.hud.pushFeed(`You eliminated ${name(victimId)}${suffix}`);
+    else if (victimId === this.selfId) this.hud.pushFeed(`${killerId ? name(killerId) : "World"} eliminated you${suffix}`);
+    else this.hud.pushFeed(`${killerId ? name(killerId) : "World"} eliminated ${name(victimId)}${suffix}`);
   }
 
   private updateScoreAndTimer(): void {
