@@ -109,6 +109,11 @@ export type ServerMessage =
       players: PlayerSnapshot[];
     }
   | { type: "hit_confirmed"; targetId: PlayerId; damage: number; killed: boolean; headshot: boolean }
+  /** Sent only to the player who got hit — the shooter's position at the
+   * moment of the shot, so the victim's client can point a directional
+   * indicator back at them. The generic full-screen damage flash alone
+   * gives no positional information. */
+  | { type: "damage_taken"; attackerPosition: Vec3 }
   | { type: "kill_feed"; killerId: PlayerId | null; victimId: PlayerId; weapon: WeaponId; headshot: boolean }
   | {
       type: "match_ended";

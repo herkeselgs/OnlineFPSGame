@@ -424,6 +424,7 @@ export class Room {
       killed: dmg.killed,
       headshot,
     });
+    this.send(bestTarget.id, { type: "damage_taken", attackerPosition: origin });
 
     if (dmg.killed) {
       shooter.combat.kills += 1;

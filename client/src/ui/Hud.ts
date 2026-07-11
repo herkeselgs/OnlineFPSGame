@@ -1,5 +1,6 @@
 const HITMARKER_DURATION_MS = 150;
 const DAMAGE_FLASH_DURATION_MS = 350;
+const DAMAGE_DIR_DURATION_MS = 900;
 const FEED_ITEM_LIFETIME_MS = 3500;
 
 export class Hud {
@@ -16,9 +17,11 @@ export class Hud {
   private reconnectOverlayEl = document.getElementById("reconnect-overlay") as HTMLDivElement;
   private reconnectTextEl = document.getElementById("reconnect-text") as HTMLDivElement;
   private pingEl = document.getElementById("hud-ping") as HTMLDivElement;
+  private damageDirEl = document.getElementById("damage-direction") as HTMLDivElement;
 
   private hitmarkerRemainingMs = 0;
   private damageFlashRemainingMs = 0;
+  private damageDirRemainingMs = 0;
   private reconnectBaseMessage = "";
   private reconnectDeadlineMs = 0;
 
@@ -80,12 +83,23 @@ export class Hud {
     this.damageFlashEl.style.opacity = "1";
   }
 
+  /** `relativeAngleRad`: 0 = attacker directly ahead, positive = to the
+   * right — rotates a chevron around the crosshair to point at them. */
+  showDamageDirection(relativeAngleRad: number): void {
+    this.damageDirRemainingMs = DAMAGE_DIR_DURATION_MS;
+    const deg = (relativeAngleRad * 180) / Math.PI;
+    this.damageDirEl.style.transform = `translate(-50%, -50%) rotate(${deg}deg)`;
+    this.damageDirEl.style.opacity = "1";
+  }
+
   /** Called when leaving a match — score/timer are match-only HUD elements
    * and shouldn't linger with stale content in practice mode or the menu. */
   hideMatchInfo(): void {
     this.scoreEl.style.display = "none";
     this.timerEl.style.display = "none";
     this.pingEl.style.display = "none";
+    this.damageDirRemainingMs = 0;
+    this.damageDirEl.style.opacity = "0";
     this.setDead(false, 0);
   }
 
@@ -122,6 +136,10 @@ export class Hud {
     if (this.damageFlashRemainingMs > 0) {
       this.damageFlashRemainingMs -= dtMs;
       this.damageFlashEl.style.opacity = String(Math.max(0, this.damageFlashRemainingMs / DAMAGE_FLASH_DURATION_MS));
+    }
+    if (this.damageDirRemainingMs > 0) {
+      this.damageDirRemainingMs -= dtMs;
+      this.damageDirEl.style.opacity = String(Math.max(0, this.damageDirRemainingMs / DAMAGE_DIR_DURATION_MS));
     }
     if (this.reconnectDeadlineMs > 0) {
       const secs = Math.max(0, Math.ceil((this.reconnectDeadlineMs - Date.now()) / 1000));

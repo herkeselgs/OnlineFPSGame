@@ -367,6 +367,33 @@ html, body {
   background: radial-gradient(ellipse at center, transparent 40%, rgba(200, 20, 20, 0.45) 100%);
 }
 
+/* Chevron that swings around the crosshair to point at where damage came
+ * from — rotated via inline transform in Hud.showDamageDirection(), 0deg
+ * (unrotated) points straight up/ahead by construction below. */
+.damage-direction {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+  z-index: 13;
+  opacity: 0;
+  transform: translate(-50%, -50%) rotate(0deg);
+}
+
+.damage-direction::before {
+  content: "";
+  position: absolute;
+  left: -9px;
+  top: -104px;
+  width: 0;
+  height: 0;
+  border-left: 9px solid transparent;
+  border-right: 9px solid transparent;
+  border-bottom: 15px solid rgba(255, 90, 80, 0.9);
+}
+
 .death-overlay {
   position: fixed;
   inset: 0;

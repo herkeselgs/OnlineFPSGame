@@ -7,6 +7,7 @@ import {
   RESPAWN_TIME_MS,
   ServerMessage,
   SpawnPoint,
+  Vec3,
 } from "@fps/shared";
 import * as THREE from "three";
 import { soundEngine } from "../audio/SoundEngine";
@@ -139,6 +140,9 @@ export class MatchController {
         this.hud.flashHitmarker(msg.killed, msg.headshot);
         soundEngine.playHitmarker(msg.killed, msg.headshot);
         break;
+      case "damage_taken":
+        this.hud.showDamageDirection(this.relativeAngleTo(msg.attackerPosition));
+        break;
       case "kill_feed":
         this.pushKillFeed(msg.killerId, msg.victimId, msg.headshot);
         break;
@@ -184,6 +188,35 @@ export class MatchController {
     if (killerId === this.selfId) this.hud.pushFeed(`You eliminated ${name(victimId)}${suffix}`);
     else if (victimId === this.selfId) this.hud.pushFeed(`${killerId ? name(killerId) : "World"} eliminated you${suffix}`);
     else this.hud.pushFeed(`${killerId ? name(killerId) : "World"} eliminated ${name(victimId)}${suffix}`);
+  }
+
+  /** Angle (radians) from the local player's current facing to `attackerPos`
+   * — 0 means directly ahead, positive means to the right (so it can feed
+   * straight into a clockwise-positive CSS rotate()).
+   *
+   * `Math.atan2(-dx, -dz)` (used all over this codebase's "aim at point P"
+   * helpers) gives the yaw VALUE that would face P, not the on-screen
+   * turn direction — and in this engine decreasing yaw turns you right
+   * (PredictionController does `yaw -= look.yaw` for a rightward mouse
+   * delta). So "target yaw minus current yaw" is negative exactly when the
+   * target is to the right, the opposite of what a clockwise-positive CSS
+   * rotation needs — hence current-minus-target below, not the other way
+   * around. (Worth spelling out because it's the kind of sign flip that's
+   * easy to silently get backwards and only notice by actually looking at
+   * the result.) */
+  private relativeAngleTo(attackerPos: Vec3): number {
+    const self = this.prediction.physics.position;
+    const dx = attackerPos.x - self.x;
+    const dz = attackerPos.z - self.z;
+    const len = Math.hypot(dx, dz);
+    if (len < 1e-6) return 0;
+    const yawToFaceAttacker = Math.atan2(-dx / len, -dz / len);
+    // Same wrap-to-(-PI,PI] pattern as vec.ts's lerpAngle -- JS's % can
+    // return a negative remainder, so the naive one-line version doesn't
+    // actually stay in range for every input.
+    let relative = ((this.prediction.yaw - yawToFaceAttacker + Math.PI) % (Math.PI * 2)) - Math.PI;
+    if (relative < -Math.PI) relative += Math.PI * 2;
+    return relative;
   }
 
   private updateScoreAndTimer(): void {
