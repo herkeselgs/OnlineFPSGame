@@ -1,7 +1,8 @@
-import { BoxCollider, moveAndResolveAxis } from "./collision.js";
+import { aabbOverlaps, BoxCollider, moveAndResolveAxis } from "./collision.js";
 import {
   AIR_ACCEL,
   AIR_CONTROL_MAX_SPEED,
+  CLIMB_SPEED,
   GRAVITY,
   GROUND_ACCEL,
   GROUND_FRICTION,
@@ -81,28 +82,47 @@ function settleOntoStep(position: Vec3, half: Vec3, colliders: readonly BoxColli
 export function stepPlayerMovement(
   state: PlayerPhysicsState,
   input: PlayerInputTick,
-  colliders: readonly BoxCollider[]
+  colliders: readonly BoxCollider[],
+  ladders: readonly BoxCollider[] = []
 ): PlayerPhysicsState {
   const dt = input.dt;
   let { velocity, onGround } = state;
   const position: Vec3 = { ...state.position };
   velocity = { ...velocity };
 
-  // Build world-space wish direction from input axes + yaw.
+  // Attached the instant the player's box overlaps a ladder volume — no
+  // separate "grab" input, matching how most FPS ladders work. Holding jump
+  // while attached lets go instead of (re)attaching, so jump doubles as
+  // "drop off the ladder" at any height, not just at the top.
+  const climbing = !input.jump && ladders.some((l) => aabbOverlaps(position, PLAYER_HALF_EXTENTS, l.center, l.half));
+  // Used only to pick horizontal accel/friction character below — full
+  // Quake-ish ground control while climbing (not the looser air-control
+  // model), since a ladder is something you actively grip, not something
+  // you're falling past.
+  const grounded = onGround || climbing;
+
+  // Build world-space wish direction from input axes + yaw. While climbing,
+  // forward/back is entirely repurposed as vertical climb speed below (not
+  // horizontal — a ladder is normally only wide enough to strafe off of,
+  // not walk forward on), so only `right` contributes to horizontal wish;
+  // otherwise a player holding forward into the wall a ladder is mounted on
+  // gets pushed sideways clean off the ladder the instant they climb high
+  // enough to clear the wall's top and that push stops being blocked.
+  const climbForward = climbing ? 0 : input.forward;
   const sinY = Math.sin(input.yaw);
   const cosY = Math.cos(input.yaw);
   // Forward is -Z at yaw 0 (matches Three.js camera convention).
-  const wishX = input.right * cosY - input.forward * sinY;
-  const wishZ = -input.forward * cosY - input.right * sinY;
+  const wishX = input.right * cosY - climbForward * sinY;
+  const wishZ = -climbForward * cosY - input.right * sinY;
   const wishLenSq = wishX * wishX + wishZ * wishZ;
   const wishDirX = wishLenSq > 1e-8 ? wishX / Math.sqrt(wishLenSq) : 0;
   const wishDirZ = wishLenSq > 1e-8 ? wishZ / Math.sqrt(wishLenSq) : 0;
   const wishSpeed = wishLenSq > 1e-8 ? MOVE_SPEED : 0;
 
-  // Horizontal accel (ground: quake-ish accelerate-toward-wish; air: capped control)
+  // Horizontal accel (ground/climbing: quake-ish accelerate-toward-wish; air: capped control)
   const curSpeed = velocity.x * wishDirX + velocity.z * wishDirZ;
-  const accel = onGround ? GROUND_ACCEL : AIR_ACCEL;
-  const maxSpeed = onGround ? MOVE_SPEED : AIR_CONTROL_MAX_SPEED;
+  const accel = grounded ? GROUND_ACCEL : AIR_ACCEL;
+  const maxSpeed = grounded ? MOVE_SPEED : AIR_CONTROL_MAX_SPEED;
   const addSpeed = Math.min(wishSpeed, maxSpeed) - curSpeed;
   if (addSpeed > 0) {
     const accelAmount = Math.min(accel * dt * wishSpeed, addSpeed);
@@ -123,7 +143,7 @@ export function stepPlayerMovement(
     velocity.z *= clampScale;
   }
 
-  if (onGround && wishSpeed === 0) {
+  if (grounded && wishSpeed === 0) {
     const horizSpeed = Math.sqrt(velocity.x * velocity.x + velocity.z * velocity.z);
     const newSpeed = applyFriction(horizSpeed, GROUND_FRICTION, dt);
     const scale = horizSpeed > 1e-8 ? newSpeed / horizSpeed : 0;
@@ -131,8 +151,14 @@ export function stepPlayerMovement(
     velocity.z *= scale;
   }
 
-  // Gravity / jump
-  if (onGround && input.jump) {
+  if (climbing) {
+    // Vertical velocity comes straight from forward/back input instead of
+    // gravity — hold forward to climb up, back to climb down, release to
+    // hang in place. Not "onGround" (there's no floor underfoot), but not
+    // falling either.
+    velocity.y = input.forward * CLIMB_SPEED;
+    onGround = false;
+  } else if (onGround && input.jump) {
     velocity.y = JUMP_SPEED;
     onGround = false;
   } else if (!onGround) {

@@ -66,7 +66,8 @@ export class PredictionController {
     private colliders: readonly BoxCollider[],
     private input: InputManager,
     private net: NetClient,
-    private camera: THREE.PerspectiveCamera
+    private camera: THREE.PerspectiveCamera,
+    private ladders: readonly BoxCollider[] = []
   ) {
     this.physics = { position: { ...spawn.position }, velocity: { x: 0, y: 0, z: 0 }, onGround: false };
     this.yaw = spawn.yaw;
@@ -151,7 +152,8 @@ export class PredictionController {
       this.physics = stepPlayerMovement(
         this.physics,
         { forward: axes.forward, right: axes.right, jump: axes.jump, yaw: this.yaw, seq, dt: SIM_DT },
-        this.colliders
+        this.colliders,
+        this.ladders
       );
     }
 
@@ -218,7 +220,8 @@ export class PredictionController {
             seq: replayInput.seq,
             dt: replayInput.dt,
           },
-          this.colliders
+          this.colliders,
+          this.ladders
         );
       }
     }

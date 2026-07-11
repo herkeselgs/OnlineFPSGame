@@ -29,7 +29,7 @@ export class PracticeMode {
     map: MapDefinition,
     mapMeshes: THREE.Mesh[]
   ) {
-    this.player = new PlayerController(map.spawns[0], map.blocks, input);
+    this.player = new PlayerController(map.spawns[0], map.blocks, input, map.ladders);
     this.combat = new CombatSystem(scene, camera, input, {
       onHit(killed, headshot) {
         hud.flashHitmarker(killed, headshot);

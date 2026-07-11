@@ -29,7 +29,8 @@ export class PlayerController {
   constructor(
     spawn: SpawnPoint,
     private colliders: readonly BoxCollider[],
-    private input: InputManager
+    private input: InputManager,
+    private ladders: readonly BoxCollider[] = []
   ) {
     this.state = {
       position: { ...spawn.position },
@@ -60,7 +61,8 @@ export class PlayerController {
           seq: this.seq++,
           dt: SIM_DT,
         },
-        this.colliders
+        this.colliders,
+        this.ladders
       );
       this.accumulator -= SIM_DT;
     }

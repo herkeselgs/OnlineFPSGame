@@ -48,13 +48,58 @@ export function buildMapScene(scene: THREE.Scene, map: MapDefinition): BuiltMapS
     meshes.push(mesh);
   }
 
+  // Ladders render as rungs + side rails so they read as climbable at a
+  // glance, but deliberately aren't added to `meshes` — that array doubles
+  // as the hitscan/LOS raycast target list, and a thin ladder frame
+  // shouldn't block bullets or sightlines the way solid geometry does.
+  const ladderMaterial = new THREE.MeshLambertMaterial({ color: 0x2c2f33 });
+  const ladderMeshes: THREE.Mesh[] = [];
+  for (const zone of map.ladders) {
+    const widthAxis = zone.depthAxis === "x" ? "z" : "x";
+    const width = zone.half[widthAxis] * 2;
+    const height = zone.half.y * 2;
+    const rungSpacing = 0.35;
+    const rungCount = Math.max(2, Math.round(height / rungSpacing));
+    const rungThickness = 0.06;
+
+    for (let i = 0; i < rungCount; i++) {
+      const t = (i + 0.5) / rungCount;
+      const y = zone.center.y - zone.half.y + t * height;
+      const rung = new THREE.Mesh(geometry, ladderMaterial);
+      if (zone.depthAxis === "x") {
+        rung.scale.set(zone.half.x * 2 * 0.8, rungThickness, width * 0.85);
+      } else {
+        rung.scale.set(width * 0.85, rungThickness, zone.half.z * 2 * 0.8);
+      }
+      rung.position.set(zone.center.x, y, zone.center.z);
+      scene.add(rung);
+      ladderMeshes.push(rung);
+    }
+
+    const railThickness = 0.05;
+    for (const sign of [-1, 1] as const) {
+      const rail = new THREE.Mesh(geometry, ladderMaterial);
+      if (zone.depthAxis === "x") {
+        rail.scale.set(zone.half.x * 2, height, railThickness);
+        rail.position.set(zone.center.x, zone.center.y, zone.center.z + sign * width * 0.42);
+      } else {
+        rail.scale.set(railThickness, height, zone.half.z * 2);
+        rail.position.set(zone.center.x + sign * width * 0.42, zone.center.y, zone.center.z);
+      }
+      scene.add(rail);
+      ladderMeshes.push(rail);
+    }
+  }
+
   return {
     meshes,
     dispose() {
       scene.remove(hemi);
       scene.remove(sun);
       for (const mesh of meshes) scene.remove(mesh);
+      for (const mesh of ladderMeshes) scene.remove(mesh);
       geometry.dispose();
+      ladderMaterial.dispose();
       for (const mat of materialCache.values()) mat.dispose();
     },
   };

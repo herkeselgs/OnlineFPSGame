@@ -288,7 +288,8 @@ export class MultiplayerFlow {
       this.playerNames,
       meshes,
       spawn,
-      map.blocks
+      map.blocks,
+      map.ladders
     );
     this.onMatchActiveChange(this.match);
     soundEngine.startAmbient();

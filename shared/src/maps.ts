@@ -16,6 +16,16 @@ export interface SpawnPoint {
   yaw: number;
 }
 
+/** A climbable volume — not a solid collider (never appears in `blocks`, so
+ * it never blocks movement or bullets). A player attaches the instant their
+ * box overlaps this zone; see stepPlayerMovement for the climbing state
+ * itself. `depthAxis` is the horizontal axis the zone is thin along (the
+ * wall it's mounted against faces along that axis) — the renderer uses it
+ * to lay ladder rungs across the other horizontal axis. */
+export interface LadderZone extends BoxCollider {
+  depthAxis: "x" | "z";
+}
+
 export interface MapDefinition {
   id: string;
   name: string;
@@ -24,6 +34,7 @@ export interface MapDefinition {
   fogDensity: number;
   ambientIntensity: number;
   blocks: MapBlock[];
+  ladders: LadderZone[];
   spawns: SpawnPoint[];
 }
 
@@ -34,6 +45,10 @@ function box(
   half: Vec3
 ): MapBlock {
   return { kind, color, center, half };
+}
+
+function ladder(center: Vec3, half: Vec3, depthAxis: "x" | "z"): LadderZone {
+  return { center, half, depthAxis };
 }
 
 /**
@@ -73,6 +88,7 @@ export const TEST_ARENA: MapDefinition = {
     box("platform", 0x52606d, { x: -14, y: 1, z: 0 }, { x: 2.5, y: 1, z: 3 }),
     box("platform", 0x52606d, { x: 14, y: 1, z: 0 }, { x: 2.5, y: 1, z: 3 }),
   ],
+  ladders: [],
   spawns: [
     // Clear of the platform colliders (x: -16.5..-11.5 / 11.5..16.5) and side
     // cover boxes (z: +/-4) so players never spawn embedded in geometry.
@@ -127,6 +143,7 @@ export const BASTION: MapDefinition = {
     box("cover", 0x9c7a52, { x: -6, y: 0.6, z: -6 }, { x: 1.3, y: 0.6, z: 1.3 }),
     box("cover", 0x9c7a52, { x: 6, y: 0.6, z: 6 }, { x: 1.3, y: 0.6, z: 1.3 }),
   ],
+  ladders: [],
   spawns: [
     // Ground level near each platform's base, clear of the treads
     // (x: -11..-8 / 8..11) and low cover boxes.
@@ -135,11 +152,108 @@ export const BASTION: MapDefinition = {
   ],
 };
 
+/**
+ * The verticality/route-variety map: a sunken central tunnel (roofed in the
+ * middle, open at both ends so it's also a jump-down shortcut from the
+ * courtyard floor, not just a formal detour) plus two ladder towers with
+ * catwalks overlooking the courtyard from real height (5m, well beyond
+ * Bastion's 1.2m stair platforms). Three genuinely different routes between
+ * spawns: straight through the courtyard, up and across the catwalks, or
+ * through the tunnel. Built as a new map rather than reworking Foundry
+ * (deliberately simple/flat by design) or Bastion (already tuned and
+ * user-confirmed) — this keeps both existing maps intact.
+ */
+export const OUTPOST: MapDefinition = {
+  id: "outpost",
+  name: "Outpost",
+  skyColor: 0x3d5560,
+  fogColor: 0x4a6670,
+  fogDensity: 0.014,
+  ambientIntensity: 0.6,
+  blocks: [
+    // Perimeter walls (same corner-overlap technique as the other maps)
+    box("wall", 0x5c7480, { x: 0, y: 2, z: -14 }, { x: 20.5, y: 2, z: 0.5 }),
+    box("wall", 0x5c7480, { x: 0, y: 2, z: 14 }, { x: 20.5, y: 2, z: 0.5 }),
+    box("wall", 0x5c7480, { x: -20, y: 2, z: 0 }, { x: 0.5, y: 2, z: 14.5 }),
+    box("wall", 0x5c7480, { x: 20, y: 2, z: 0 }, { x: 0.5, y: 2, z: 14.5 }),
+
+    // Courtyard floor, split around the sunken tunnel channel (x:-4..4,
+    // z:-2..2) rather than one slab, so that channel can sit lower.
+    box("floor", 0x6b7d85, { x: -12, y: -0.5, z: 0 }, { x: 8, y: 0.5, z: 14 }), // west of tunnel
+    box("floor", 0x6b7d85, { x: 12, y: -0.5, z: 0 }, { x: 8, y: 0.5, z: 14 }), // east of tunnel
+    box("floor", 0x6b7d85, { x: 0, y: -0.5, z: 8 }, { x: 4, y: 0.5, z: 6 }), // north strip over the channel
+    box("floor", 0x6b7d85, { x: 0, y: -0.5, z: -8 }, { x: 4, y: 0.5, z: 6 }), // south strip over the channel
+
+    // Sunken tunnel floor (top at y=-1.2) and a roof over its central,
+    // fully-sunken section only — kept clear of the staircases' x-range
+    // (-4..-2.8 / 2.8..4) entirely, since a player descending the stairs is
+    // still mostly at courtyard height (and taller than the roof's
+    // clearance) partway down; roofing that stretch would wedge them
+    // between the ceiling and the stairs before they can duck under it.
+    // The open ends also make jumping straight down from the courtyard
+    // edge a legitimate (if risky) shortcut, while the middle reads as a
+    // real enclosed tunnel.
+    box("floor", 0x51616a, { x: 0, y: -1.7, z: 0 }, { x: 4, y: 0.5, z: 2 }),
+    // Ceiling's *effective* blocking boundary is its edge plus the
+    // player's own half-width (0.35), not just its raw edge — half.x=2.3
+    // keeps that effective boundary (~2.65) clear of the staircases'
+    // inner edge (2.8), which a naive "just narrower than the stairs"
+    // width doesn't (found by simulating a walk-through and hitting
+    // exactly this margin).
+    box("wall", 0x445258, { x: 0, y: 0.95, z: 0 }, { x: 2.3, y: 0.15, z: 2 }),
+
+    // West tunnel staircase (0.4m rise per tread, same technique as
+    // Bastion's stairs, descending from courtyard level 0 to tunnel -1.2).
+    box("platform", 0x5c6f78, { x: -3.8, y: -1.3, z: 0 }, { x: 0.2, y: 0.9, z: 2 }), // top -0.4
+    box("platform", 0x5c6f78, { x: -3.4, y: -1.7, z: 0 }, { x: 0.2, y: 0.9, z: 2 }), // top -0.8
+    box("platform", 0x5c6f78, { x: -3.0, y: -2.1, z: 0 }, { x: 0.2, y: 0.9, z: 2 }), // top -1.2
+
+    // East tunnel staircase, mirrored
+    box("platform", 0x5c6f78, { x: 3.8, y: -1.3, z: 0 }, { x: 0.2, y: 0.9, z: 2 }),
+    box("platform", 0x5c6f78, { x: 3.4, y: -1.7, z: 0 }, { x: 0.2, y: 0.9, z: 2 }),
+    box("platform", 0x5c6f78, { x: 3.0, y: -2.1, z: 0 }, { x: 0.2, y: 0.9, z: 2 }),
+
+    // West ladder tower: a 6.5m backing wall with a ladder mounted on its
+    // courtyard-facing side, topped by a catwalk (top at y=5.3) offset in
+    // +Z from the ladder so reaching it means climbing up then stepping
+    // sideways off the ladder, not just walking straight off the top. The
+    // ladder (and this wall) climb well past the catwalk's height rather
+    // than stopping right at it — a player's whole body has to clear the
+    // catwalk's underside before shimmying sideways onto it, or the
+    // catwalk's edge just blocks them like a wall instead of being
+    // something to step up onto, so the extra headroom is load-bearing,
+    // not just generous.
+    box("wall", 0x475660, { x: -14, y: 3.25, z: 0 }, { x: 0.4, y: 3.25, z: 2 }),
+    box("platform", 0x5c6f78, { x: -11.5, y: 5.15, z: 2.75 }, { x: 2.5, y: 0.15, z: 1.75 }),
+
+    // East ladder tower, mirrored
+    box("wall", 0x475660, { x: 14, y: 3.25, z: 0 }, { x: 0.4, y: 3.25, z: 2 }),
+    box("platform", 0x5c6f78, { x: 11.5, y: 5.15, z: 2.75 }, { x: 2.5, y: 0.15, z: 1.75 }),
+
+    // Courtyard cover, offset diagonally so there's no single dominant
+    // sightline straight across the map.
+    box("cover", 0x647680, { x: -9, y: 0.75, z: 6 }, { x: 1.2, y: 0.75, z: 1.2 }),
+    box("cover", 0x647680, { x: 9, y: 0.75, z: -6 }, { x: 1.2, y: 0.75, z: 1.2 }),
+  ],
+  ladders: [
+    // Spans the full 6.5m wall height, matching it.
+    ladder({ x: -13.3, y: 3.25, z: 0 }, { x: 0.3, y: 3.25, z: 0.6 }, "x"),
+    ladder({ x: 13.3, y: 3.25, z: 0 }, { x: 0.3, y: 3.25, z: 0.6 }, "x"),
+  ],
+  spawns: [
+    // Clear of both towers (x: -14.4..-13.6 / 13.6..14.4) and the tunnel
+    // channel (x: -4..4).
+    { position: { x: -18, y: 1.2, z: 9 }, yaw: -2.35 },
+    { position: { x: 18, y: 1.2, z: -9 }, yaw: 0.79 },
+  ],
+};
+
 export const MAPS: Record<string, MapDefinition> = {
   [TEST_ARENA.id]: TEST_ARENA,
   [BASTION.id]: BASTION,
+  [OUTPOST.id]: OUTPOST,
 };
 
-export const MAP_ORDER: string[] = [TEST_ARENA.id, BASTION.id];
+export const MAP_ORDER: string[] = [TEST_ARENA.id, BASTION.id, OUTPOST.id];
 
 export const DEFAULT_MAP_ID = TEST_ARENA.id;

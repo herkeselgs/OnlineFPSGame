@@ -229,7 +229,8 @@ export class Room {
             seq: input.seq,
             dt: input.dt,
           },
-          this.map.blocks
+          this.map.blocks,
+          this.map.ladders
         );
         session.weapon.update(input.dt * 1000);
         if (input.switchTo) session.weapon.switchTo(input.switchTo);

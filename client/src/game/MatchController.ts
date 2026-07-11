@@ -57,10 +57,11 @@ export class MatchController {
     playerNames: Map<PlayerId, string>,
     mapMeshes: THREE.Mesh[],
     spawn: SpawnPoint,
-    colliders: readonly BoxCollider[]
+    colliders: readonly BoxCollider[],
+    ladders: readonly BoxCollider[] = []
   ) {
     this.playerNames = playerNames;
-    this.prediction = new PredictionController(spawn, colliders, input, net, camera);
+    this.prediction = new PredictionController(spawn, colliders, input, net, camera, ladders);
     this.tracers = new TracerPool(scene);
     this.muzzleFlash = new MuzzleFlashEffect(camera);
     this.raycastables = [...mapMeshes];
