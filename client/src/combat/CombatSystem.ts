@@ -33,6 +33,9 @@ export class CombatSystem {
   private tracers: TracerPool;
   private shake = new ScreenShake();
   private wasReloading = false;
+  private lowAmmoWarned = false;
+  private lastAmmoForWarning = -1;
+  private lastWeaponIdForWarning: WeaponId | null = null;
 
   constructor(
     private scene: THREE.Scene,
@@ -75,6 +78,21 @@ export class CombatSystem {
       else soundEngine.playReloadFinish();
       this.wasReloading = this.weapon.isReloading;
     }
+
+    // Fires once as the magazine crosses its low threshold — see the
+    // identical logic in PredictionController for the multiplayer path
+    // (this class is practice mode's, kept as its own copy same as the
+    // reload-sound trigger above, not a new duplication pattern).
+    const ammo = this.weapon.currentAmmo;
+    const weaponId = this.weapon.currentId;
+    if (weaponId !== this.lastWeaponIdForWarning || ammo > this.lastAmmoForWarning) this.lowAmmoWarned = false;
+    const lowThreshold = Math.max(2, Math.ceil(this.weapon.current.magazineSize * 0.15));
+    if (!this.lowAmmoWarned && ammo > 0 && ammo <= lowThreshold) {
+      this.lowAmmoWarned = true;
+      soundEngine.playLowAmmo();
+    }
+    this.lastAmmoForWarning = ammo;
+    this.lastWeaponIdForWarning = weaponId;
 
     // Always drain the click edge, even for auto weapons that fire off
     // .firing instead — otherwise an edge from a click while an auto weapon

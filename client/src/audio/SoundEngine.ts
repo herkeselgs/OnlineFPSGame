@@ -53,6 +53,16 @@ export class SoundEngine {
     }
   }
 
+  /** A player focused on aiming/tracking an opponent easily misses the
+   * small HUD ammo counter — this fires once as the magazine crosses its
+   * low threshold (see the caller), not continuously, so it reads as a
+   * heads-up rather than a nag. */
+  playLowAmmo(): void {
+    if (!this.ready()) return;
+    this.tone({ freq: 340, duration: 0.045, gain: 0.22, type: "square" });
+    this.tone({ freq: 340, duration: 0.045, gain: 0.22, type: "square", delaySec: 0.09 });
+  }
+
   playReloadStart(): void {
     if (!this.ready()) return;
     this.noiseBurst({ freq: 1800, q: 3, type: "bandpass", duration: 0.03, gain: 0.2 });

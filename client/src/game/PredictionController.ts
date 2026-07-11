@@ -60,6 +60,9 @@ export class PredictionController {
   private pendingInputs: ClientInputMessage[] = [];
   private rttMs = 0;
   private wasReloading = false;
+  private lowAmmoWarned = false;
+  private lastAmmoForWarning = -1;
+  private lastWeaponIdForWarning: WeaponId | null = null;
 
   constructor(
     spawn: SpawnPoint,
@@ -130,6 +133,23 @@ export class PredictionController {
       else soundEngine.playReloadFinish();
       this.wasReloading = this.weapon.isReloading;
     }
+
+    // Fires once as the magazine crosses its low threshold, not on every
+    // tick spent below it — resets on reload/refill (ammo went back up) or
+    // weapon switch (each gun's low-ammo state is independent — switching
+    // TO an already-low second weapon must still warn even if the FIRST
+    // weapon already triggered its own warning this life) so it can warn
+    // again next time that gun runs low.
+    const ammo = this.weapon.currentAmmo;
+    const weaponId = this.weapon.currentId;
+    if (weaponId !== this.lastWeaponIdForWarning || ammo > this.lastAmmoForWarning) this.lowAmmoWarned = false;
+    const lowThreshold = Math.max(2, Math.ceil(this.weapon.current.magazineSize * 0.15));
+    if (!this.lowAmmoWarned && ammo > 0 && ammo <= lowThreshold) {
+      this.lowAmmoWarned = true;
+      soundEngine.playLowAmmo();
+    }
+    this.lastAmmoForWarning = ammo;
+    this.lastWeaponIdForWarning = weaponId;
 
     // Drain the click edge unconditionally regardless of fire mode — see
     // CombatSystem for why (a stale edge from an auto weapon otherwise
