@@ -310,6 +310,26 @@ html, body {
   border-radius: 8px;
 }
 
+.hud-ping {
+  display: none;
+  font: 13px/1 ui-monospace, monospace;
+  background: rgba(10, 14, 18, 0.5);
+  padding: 5px 10px;
+  border-radius: 8px;
+}
+
+.hud-ping.ping-good {
+  color: #6fdc8c;
+}
+
+.hud-ping.ping-ok {
+  color: #f2c94c;
+}
+
+.hud-ping.ping-poor {
+  color: #ff6b5e;
+}
+
 .hud-health-wrap {
   position: fixed;
   left: 18px;

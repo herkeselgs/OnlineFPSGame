@@ -77,6 +77,10 @@ export class PredictionController {
     this.rttMs = ms;
   }
 
+  get rttEstimate(): number {
+    return this.rttMs;
+  }
+
   /** Steps prediction forward by frameDt (seconds), sending one network
    * input per fixed tick processed. Returns shots fired this frame so the
    * caller can spawn local tracer/muzzle-flash effects immediately —

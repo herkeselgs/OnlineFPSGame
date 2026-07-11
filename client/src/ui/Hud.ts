@@ -15,6 +15,7 @@ export class Hud {
   private damageFlashEl = document.getElementById("damage-flash") as HTMLDivElement;
   private reconnectOverlayEl = document.getElementById("reconnect-overlay") as HTMLDivElement;
   private reconnectTextEl = document.getElementById("reconnect-text") as HTMLDivElement;
+  private pingEl = document.getElementById("hud-ping") as HTMLDivElement;
 
   private hitmarkerRemainingMs = 0;
   private damageFlashRemainingMs = 0;
@@ -46,6 +47,19 @@ export class Hud {
     this.scoreEl.textContent = `${selfName} ${selfScore} — ${oppScore} ${oppName}`;
   }
 
+  /** School wifi is exactly the kind of connection that degrades before it
+   * drops outright — surfacing ping (not just reacting to a hard
+   * disconnect via the reconnect overlay) gives a player a chance to
+   * notice "this is about to get bad" instead of being blindsided. */
+  updatePing(rttMs: number): void {
+    this.pingEl.style.display = "block";
+    const ms = Math.round(rttMs);
+    this.pingEl.textContent = `${ms}ms`;
+    const quality = ms < 70 ? "good" : ms < 150 ? "ok" : "poor";
+    this.pingEl.classList.remove("ping-good", "ping-ok", "ping-poor");
+    this.pingEl.classList.add(`ping-${quality}`);
+  }
+
   updateTimer(remainingMs: number): void {
     this.timerEl.style.display = "block";
     const total = Math.max(0, Math.ceil(remainingMs / 1000));
@@ -71,6 +85,7 @@ export class Hud {
   hideMatchInfo(): void {
     this.scoreEl.style.display = "none";
     this.timerEl.style.display = "none";
+    this.pingEl.style.display = "none";
     this.setDead(false, 0);
   }
 

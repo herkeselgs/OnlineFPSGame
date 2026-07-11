@@ -86,6 +86,7 @@ export class MatchController {
     const w = this.prediction.weapon;
     this.hud.updateWeapon(w.current.name, w.currentAmmo, w.current.magazineSize, w.isReloading);
     this.hud.updateHealth(this.prediction.combat.health);
+    this.hud.updatePing(this.prediction.rttEstimate);
 
     if (this.prediction.combat.health < this.lastHealth) {
       this.hud.flashDamage();
