@@ -88,6 +88,7 @@ export class MatchController {
     this.hud.updateWeapon(w.current.name, w.currentAmmo, w.current.magazineSize, w.isReloading);
     this.hud.updateHealth(this.prediction.combat.health);
     this.hud.updatePing(this.prediction.rttEstimate);
+    this.hud.updateSpawnProtection(this.prediction.combat.spawnProtectedUntil - this.clock.estimateServerTime());
 
     if (this.prediction.combat.health < this.lastHealth) {
       this.hud.flashDamage();

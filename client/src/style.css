@@ -358,6 +358,37 @@ html, body {
   line-height: 1;
 }
 
+/* Shown next to health for the few seconds after (re)spawning — players
+ * otherwise have no way to know they're currently invincible, or exactly
+ * when that stops, which matters for how aggressively to peek. */
+.hud-spawn-shield {
+  display: none;
+  align-items: center;
+  gap: 5px;
+  color: #5fb8f2;
+  background: rgba(10, 14, 18, 0.5);
+  padding: 4px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  animation: spawn-shield-pulse 1.1s ease-in-out infinite;
+}
+
+.hud-spawn-shield svg {
+  width: 15px;
+  height: 15px;
+}
+
+@keyframes spawn-shield-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
 .damage-flash {
   position: fixed;
   inset: 0;

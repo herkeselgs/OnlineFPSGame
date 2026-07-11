@@ -18,6 +18,8 @@ export class Hud {
   private reconnectTextEl = document.getElementById("reconnect-text") as HTMLDivElement;
   private pingEl = document.getElementById("hud-ping") as HTMLDivElement;
   private damageDirEl = document.getElementById("damage-direction") as HTMLDivElement;
+  private spawnShieldEl = document.getElementById("hud-spawn-shield") as HTMLDivElement;
+  private spawnShieldTextEl = document.getElementById("hud-spawn-shield-text") as HTMLSpanElement;
 
   private hitmarkerRemainingMs = 0;
   private damageFlashRemainingMs = 0;
@@ -63,6 +65,18 @@ export class Hud {
     this.pingEl.classList.add(`ping-${quality}`);
   }
 
+  /** Called every frame with however long spawn protection has left (<=0
+   * once it's expired or not applicable) — players otherwise have no way
+   * to know they're currently invincible, or exactly when that stops. */
+  updateSpawnProtection(remainingMs: number): void {
+    if (remainingMs <= 0) {
+      this.spawnShieldEl.style.display = "none";
+      return;
+    }
+    this.spawnShieldEl.style.display = "flex";
+    this.spawnShieldTextEl.textContent = `${(remainingMs / 1000).toFixed(1)}s`;
+  }
+
   updateTimer(remainingMs: number): void {
     this.timerEl.style.display = "block";
     const total = Math.max(0, Math.ceil(remainingMs / 1000));
@@ -98,6 +112,7 @@ export class Hud {
     this.scoreEl.style.display = "none";
     this.timerEl.style.display = "none";
     this.pingEl.style.display = "none";
+    this.spawnShieldEl.style.display = "none";
     this.damageDirRemainingMs = 0;
     this.damageDirEl.style.opacity = "0";
     this.setDead(false, 0);
