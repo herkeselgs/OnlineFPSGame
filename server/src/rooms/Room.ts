@@ -166,7 +166,8 @@ export class Room {
   }
 
   removePlayer(id: PlayerId): void {
-    if (!this.players.has(id)) return;
+    const leavingSession = this.players.get(id);
+    if (!leavingSession) return;
     const timer = this.disconnectTimers.get(id);
     if (timer) {
       clearTimeout(timer);
@@ -179,7 +180,12 @@ export class Room {
     if (this.phase === "active" || this.phase === "countdown") {
       const remaining = [...this.players.values()];
       const winnerId = remaining.length === 1 ? remaining[0].id : null;
-      const scores = remaining.map((p) => ({
+      // Include the leaving player's final stats too, not just whoever's
+      // left — otherwise the remaining player's results screen (and
+      // anything derived from it, like the opponent name recorded into
+      // match history/rivalry stats) loses all trace of who they actually
+      // played the instant the other person leaves early.
+      const scores = [...remaining, leavingSession].map((p) => ({
         id: p.id,
         name: p.name,
         kills: p.combat.kills,

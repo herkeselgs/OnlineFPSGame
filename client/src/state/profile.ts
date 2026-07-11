@@ -12,6 +12,15 @@ export interface MatchRecord {
   opponentName: string;
 }
 
+export interface RivalryRecord {
+  /** Preserves whatever casing/spelling the opponent last used, even though
+   * matches are looked up by a normalized key — see normalizeOpponentKey. */
+  displayName: string;
+  wins: number;
+  losses: number;
+  draws: number;
+}
+
 export interface Profile {
   name: string;
   xp: number;
@@ -21,6 +30,10 @@ export interface Profile {
   totalWins: number;
   totalMatches: number;
   history: MatchRecord[];
+  /** Keyed by normalizeOpponentKey(opponentName) — a running record against
+   * each person this profile has actually played, for two friends who
+   * replay each other repeatedly and want to know who's really winning. */
+  rivalries: Record<string, RivalryRecord>;
 }
 
 const DEFAULT_PROFILE: Profile = {
@@ -32,7 +45,16 @@ const DEFAULT_PROFILE: Profile = {
   totalWins: 0,
   totalMatches: 0,
   history: [],
+  rivalries: {},
 };
+
+/** Names are freeform text, not accounts — this is the best available
+ * "same person" signal without the backend work that's explicitly out of
+ * scope for this pass. Trim/lowercase so "Bob", "bob ", "BOB" all count as
+ * the same rivalry instead of splitting into three trivial ones. */
+function normalizeOpponentKey(name: string): string {
+  return name.trim().toLowerCase();
+}
 
 const STORAGE_KEY = "fps-profile";
 const MAX_HISTORY = 20;
@@ -99,6 +121,16 @@ export class ProfileStore {
     const xpAwarded = xpForMatch(record.kills, record.result === "win");
 
     const history = [record, ...this.profile.history].slice(0, MAX_HISTORY);
+
+    const key = normalizeOpponentKey(record.opponentName);
+    const prevRivalry = this.profile.rivalries[key];
+    const rivalry: RivalryRecord = {
+      displayName: record.opponentName,
+      wins: (prevRivalry?.wins ?? 0) + (record.result === "win" ? 1 : 0),
+      losses: (prevRivalry?.losses ?? 0) + (record.result === "loss" ? 1 : 0),
+      draws: (prevRivalry?.draws ?? 0) + (record.result === "draw" ? 1 : 0),
+    };
+
     this.update({
       xp: this.profile.xp + xpAwarded,
       totalKills: this.profile.totalKills + record.kills,
@@ -106,10 +138,17 @@ export class ProfileStore {
       totalWins: this.profile.totalWins + (record.result === "win" ? 1 : 0),
       totalMatches: this.profile.totalMatches + 1,
       history,
+      rivalries: { ...this.profile.rivalries, [key]: rivalry },
     });
 
     const afterLevel = this.levelInfo.level;
     return { xpAwarded, newLevel: afterLevel, leveledUp: afterLevel > beforeLevel };
+  }
+
+  /** The running record against a specific opponent, if any matches have
+   * been played against them under this name yet. */
+  getRivalry(opponentName: string): RivalryRecord | null {
+    return this.profile.rivalries[normalizeOpponentKey(opponentName)] ?? null;
   }
 
   private update(patch: Partial<Profile>): void {

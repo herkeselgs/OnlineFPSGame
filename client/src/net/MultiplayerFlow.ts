@@ -420,6 +420,15 @@ export class MultiplayerFlow {
       xpLine.className = "results-xp-line";
       xpLine.textContent = leveledUp ? `+${xpAwarded} XP — Level up! Now level ${newLevel}` : `+${xpAwarded} XP`;
       this.resultsScores.appendChild(xpLine);
+
+      const rivalry = profileStore.getRivalry(record.opponentName);
+      if (rivalry && rivalry.wins + rivalry.losses + rivalry.draws > 1) {
+        const rivalryLine = document.createElement("div");
+        rivalryLine.className = "results-rivalry-line";
+        const drawPart = rivalry.draws > 0 ? ` - ${rivalry.draws}D` : "";
+        rivalryLine.textContent = `Career vs ${rivalry.displayName}: ${rivalry.wins}W - ${rivalry.losses}L${drawPart}`;
+        this.resultsScores.appendChild(rivalryLine);
+      }
     }
   }
 

@@ -926,6 +926,13 @@ html, body {
   padding: 8px 0 0;
 }
 
+.results-rivalry-line {
+  text-align: center;
+  font-size: 13px;
+  color: #b7c2cc;
+  padding: 4px 0 0;
+}
+
 /* --- Mobile / responsive --- */
 
 .mobile-notice {
