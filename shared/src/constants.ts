@@ -67,6 +67,12 @@ export const HEAD_BAND_MAX_Y = PLAYER_HALF_EXTENTS.y; // top of the head box (ma
  * hit — still requires consecutive precision, not a coinflip. */
 export const HEADSHOT_DAMAGE_MULTIPLIER = 2;
 
+/** How long a disconnected player has to reconnect to their in-progress
+ * match before it's scored as a forfeit. The match pauses (simulation and
+ * timers frozen) for the whole window rather than continuing without them —
+ * a brief school-wifi drop shouldn't hand the other player free kills. */
+export const RECONNECT_GRACE_MS = 30000;
+
 // --- Gameplay ---
 export const MAX_HEALTH = 100;
 export const RESPAWN_TIME_MS = 3000;

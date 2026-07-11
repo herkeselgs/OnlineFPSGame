@@ -31,6 +31,41 @@ function randomDefaultName(): string {
   return `Player${Math.floor(1000 + Math.random() * 9000)}`;
 }
 
+const RECONNECT_SESSION_KEY = "fps-reconnect";
+
+interface SavedSession {
+  code: string;
+  token: string;
+}
+
+/** Persisted in sessionStorage (not localStorage) — reconnect should only
+ * ever apply to this same browser tab picking its own dropped connection
+ * back up, never to a stale tab resuming a match days later. */
+function saveSession(code: string, token: string): void {
+  try {
+    sessionStorage.setItem(RECONNECT_SESSION_KEY, JSON.stringify({ code, token }));
+  } catch {
+    // sessionStorage unavailable — reconnect just won't have anything to resume with, non-fatal.
+  }
+}
+
+function loadSession(): SavedSession | null {
+  try {
+    const raw = sessionStorage.getItem(RECONNECT_SESSION_KEY);
+    return raw ? (JSON.parse(raw) as SavedSession) : null;
+  } catch {
+    return null;
+  }
+}
+
+function clearSession(): void {
+  try {
+    sessionStorage.removeItem(RECONNECT_SESSION_KEY);
+  } catch {
+    // ignore
+  }
+}
+
 /**
  * Owns the menu -> lobby -> countdown -> match -> results flow: connecting,
  * creating/joining rooms by code, ready-up, and instantiating/tearing down
@@ -67,6 +102,10 @@ export class MultiplayerFlow {
   private ready = false;
   private lobbyPhase: "lobby" | "countdown" | "active" | "ended" = "lobby";
   private currentMapId = MAP_ORDER[0];
+  /** True from a successful room_created/room_joined until leaveRoom() —
+   * gates whether a connection drop/recovery should try to reconnect into
+   * the same match rather than sit idle (e.g. while still on the menu). */
+  private inRoom = false;
 
   constructor(
     private scene: THREE.Scene,
@@ -88,6 +127,23 @@ export class MultiplayerFlow {
     // leaveRoom() directly when appropriate instead of listening here.
 
     this.buildMapSelector();
+
+    // Persistent (never unsubscribed) connection listener, separate from
+    // connectThen()'s one-shot version — it needs to react to every
+    // reconnect for the lifetime of a room, not just the first connect.
+    // NetClient already retries the underlying socket with backoff; this is
+    // what turns "socket is back" into "back in the same match".
+    this.net.onConnectionChange((connected) => {
+      if (connected) {
+        this.hud.hideReconnectOverlay();
+        if (this.inRoom) {
+          const saved = loadSession();
+          if (saved) this.net.send({ type: "rejoin_room", code: saved.code, token: saved.token });
+        }
+      } else if (this.inRoom && (this.lobbyPhase === "active" || this.lobbyPhase === "countdown")) {
+        this.hud.showReconnectOverlay("Connection lost — reconnecting...", 0);
+      }
+    });
 
     if (profileStore.get().name) this.nameInput.value = profileStore.get().name;
 
@@ -173,12 +229,30 @@ export class MultiplayerFlow {
       case "room_created":
         this.selfId = msg.selfId;
         this.roomCode = msg.code;
+        this.inRoom = true;
+        saveSession(msg.code, msg.reconnectToken);
         this.showLobby();
         break;
       case "room_joined":
         this.selfId = msg.selfId;
         this.roomCode = msg.code;
+        this.inRoom = true;
+        saveSession(msg.code, msg.reconnectToken);
+        // On a fresh join this is the right screen; on a rejoin mid-match,
+        // the lobby_update/match_started the server sends right behind
+        // this one immediately override it — a brief lobby flash is an
+        // acceptable trade for not needing separate rejoin-specific UI.
         this.showLobby();
+        break;
+      case "rejoin_failed":
+        clearSession();
+        this.inRoom = false;
+        this.hud.hideReconnectOverlay();
+        this.menuError.textContent = msg.message;
+        this.showMenu();
+        break;
+      case "opponent_connection":
+        this.handleOpponentConnection(msg.id, msg.connected, msg.graceMs);
         break;
       case "room_error":
         this.menuError.textContent = msg.message;
@@ -202,6 +276,16 @@ export class MultiplayerFlow {
         break;
       default:
         break;
+    }
+  }
+
+  private handleOpponentConnection(id: PlayerId, connected: boolean, graceMs?: number): void {
+    if (id === this.selfId) return;
+    if (connected) {
+      this.hud.hideReconnectOverlay();
+    } else {
+      const name = this.playerNames.get(id) ?? "Opponent";
+      this.hud.showReconnectOverlay(`${name} disconnected — waiting to reconnect...`, graceMs ?? 0);
     }
   }
 
@@ -351,6 +435,9 @@ export class MultiplayerFlow {
    * by main.ts's leave-match button. */
   leaveRoom(): void {
     soundEngine.stopAmbient();
+    this.inRoom = false;
+    clearSession();
+    this.hud.hideReconnectOverlay();
     this.net.send({ type: "leave_room" });
     this.net.close();
     if (this.unsubscribe) this.unsubscribe();

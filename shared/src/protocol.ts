@@ -36,6 +36,10 @@ export interface ClientInputMessage {
 export type ClientMessage =
   | { type: "create_room"; name: string; color: number }
   | { type: "join_room"; code: string; name: string; color: number }
+  /** Reattaches to a session the sender previously held in this room —
+   * sent automatically after an unexpected socket drop (see NetClient's
+   * auto-reconnect), not something the UI exposes directly. */
+  | { type: "rejoin_room"; code: string; token: string }
   | { type: "leave_room" }
   | { type: "set_ready"; ready: boolean }
   | { type: "set_map"; mapId: string }
@@ -87,9 +91,14 @@ export interface MatchScoreEntry {
 export type MatchPhase = "lobby" | "countdown" | "active" | "ended";
 
 export type ServerMessage =
-  | { type: "room_created"; code: string; selfId: PlayerId }
-  | { type: "room_joined"; code: string; selfId: PlayerId; mapId: string }
+  | { type: "room_created"; code: string; selfId: PlayerId; reconnectToken: string }
+  | { type: "room_joined"; code: string; selfId: PlayerId; mapId: string; reconnectToken: string }
   | { type: "room_error"; message: string }
+  | { type: "rejoin_failed"; message: string }
+  /** A player's socket connection state changed. `graceMs` is only present
+   * when connected=false, and tells the UI how long the other player has
+   * to reconnect before the match is scored a forfeit. */
+  | { type: "opponent_connection"; id: PlayerId; connected: boolean; graceMs?: number }
   | { type: "lobby_update"; phase: MatchPhase; players: RoomPlayerSummary[]; mapId: string }
   | { type: "match_countdown"; startsAtServerTime: number }
   | { type: "match_started"; serverTime: number; mapId: string; durationMs: number }

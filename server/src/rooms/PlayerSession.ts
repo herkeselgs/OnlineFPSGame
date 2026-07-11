@@ -8,6 +8,7 @@ import {
   LAG_COMP_HISTORY_MS,
   WeaponState,
 } from "@fps/shared";
+import { randomUUID } from "node:crypto";
 import { WebSocket } from "ws";
 
 export interface PlayerSession {
@@ -17,6 +18,10 @@ export interface PlayerSession {
   color: number;
   ready: boolean;
   connected: boolean;
+  /** Opaque credential the client persists (sessionStorage) so a dropped
+   * socket can reattach to this exact session instead of joining as a new
+   * player — see Room.rejoin(). Never sent to the other player. */
+  reconnectToken: string;
 
   physics: PlayerPhysicsState;
   yaw: number;
@@ -49,6 +54,7 @@ export function createPlayerSession(id: PlayerId, ws: WebSocket, name: string, c
     color,
     ready: false,
     connected: true,
+    reconnectToken: randomUUID(),
     physics: { position: { x: 0, y: 0, z: 0 }, velocity: { x: 0, y: 0, z: 0 }, onGround: false },
     yaw: 0,
     pitch: 0,

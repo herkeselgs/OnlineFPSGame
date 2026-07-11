@@ -48,7 +48,9 @@ wss.on("connection", (socket: WebSocket) => {
       }
       state.room = room;
       state.playerId = id;
-      socket.send(JSON.stringify({ type: "room_created", code: room.code, selfId: id }));
+      socket.send(
+        JSON.stringify({ type: "room_created", code: room.code, selfId: id, reconnectToken: room.getToken(id) })
+      );
       return;
     }
 
@@ -65,7 +67,41 @@ wss.on("connection", (socket: WebSocket) => {
       }
       state.room = room;
       state.playerId = id;
-      socket.send(JSON.stringify({ type: "room_joined", code: room.code, selfId: id, mapId: room.map.id }));
+      socket.send(
+        JSON.stringify({
+          type: "room_joined",
+          code: room.code,
+          selfId: id,
+          mapId: room.map.id,
+          reconnectToken: room.getToken(id),
+        })
+      );
+      return;
+    }
+
+    if (msg.type === "rejoin_room") {
+      const room = roomManager.getRoom(msg.code);
+      if (!room) {
+        socket.send(JSON.stringify({ type: "rejoin_failed", message: "Room not found" }));
+        return;
+      }
+      const id = room.rejoin(msg.token, socket);
+      if (!id) {
+        socket.send(JSON.stringify({ type: "rejoin_failed", message: "Could not reconnect to that match" }));
+        return;
+      }
+      state.room = room;
+      state.playerId = id;
+      socket.send(
+        JSON.stringify({
+          type: "room_joined",
+          code: room.code,
+          selfId: id,
+          mapId: room.map.id,
+          reconnectToken: room.getToken(id),
+        })
+      );
+      room.resendStateTo(id);
       return;
     }
 
@@ -76,7 +112,7 @@ wss.on("connection", (socket: WebSocket) => {
 
   socket.on("close", () => {
     if (state.room && state.playerId) {
-      state.room.removePlayer(state.playerId);
+      state.room.handleDisconnect(state.playerId);
     }
   });
 });

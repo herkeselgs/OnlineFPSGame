@@ -17,6 +17,7 @@ import {
   PlayerId,
   PlayerSnapshot,
   rayIntersectsBox,
+  RECONNECT_GRACE_MS,
   RESPAWN_TIME_MS,
   RESULTS_DISPLAY_MS,
   respawn,
@@ -53,6 +54,11 @@ export class Room {
   private tickCount = 0;
   private ticksSinceSnapshot = 0;
 
+  /** Set the instant any player drops mid-match; simulation freezes (see
+   * tick()) until everyone is reconnected or the grace period times out. */
+  private pauseStartedAt: number | null = null;
+  private disconnectTimers = new Map<PlayerId, ReturnType<typeof setTimeout>>();
+
   constructor(code: string, private onEmpty: () => void) {
     this.code = code;
   }
@@ -77,8 +83,95 @@ export class Room {
     return id;
   }
 
+  getToken(id: PlayerId): string | undefined {
+    return this.players.get(id)?.reconnectToken;
+  }
+
+  /** Called when a player's socket closes unexpectedly (not via an explicit
+   * leave_room). Outside an active match there's no state worth preserving,
+   * so it's an immediate removal same as before; mid-match, it pauses the
+   * room and starts the reconnect grace window instead. */
+  handleDisconnect(id: PlayerId): void {
+    const session = this.players.get(id);
+    if (!session) return;
+
+    if (this.phase !== "active" && this.phase !== "countdown") {
+      this.removePlayer(id);
+      return;
+    }
+
+    session.connected = false;
+    if (this.pauseStartedAt === null) {
+      this.pauseStartedAt = Date.now();
+      // Flush anything already queued for this tick before the pause flag
+      // takes effect, so nothing from right before the drop sneaks into
+      // the resume burst either.
+      for (const p of this.players.values()) p.inputQueue.length = 0;
+    }
+    this.broadcast({ type: "opponent_connection", id, connected: false, graceMs: RECONNECT_GRACE_MS });
+
+    const timer = setTimeout(() => {
+      this.disconnectTimers.delete(id);
+      if (!session.connected) this.removePlayer(id); // never made it back -> forfeit, same as the old instant behavior
+    }, RECONNECT_GRACE_MS);
+    this.disconnectTimers.set(id, timer);
+  }
+
+  /** Reattaches `ws` to the session holding `token`, if one is disconnected
+   * and waiting. Resumes simulation once nobody is left disconnected,
+   * sliding the match clock and any in-flight respawn timers forward by
+   * however long the room was paused so no time is unfairly lost. */
+  rejoin(token: string, ws: WebSocket): PlayerId | null {
+    for (const [id, session] of this.players) {
+      if (session.reconnectToken !== token || session.connected) continue;
+
+      session.ws = ws;
+      session.connected = true;
+      const timer = this.disconnectTimers.get(id);
+      if (timer) {
+        clearTimeout(timer);
+        this.disconnectTimers.delete(id);
+      }
+
+      if (this.pauseStartedAt !== null && [...this.players.values()].every((p) => p.connected)) {
+        const pausedMs = Date.now() - this.pauseStartedAt;
+        this.matchEndsAt += pausedMs;
+        for (const p of this.players.values()) {
+          if (!p.combat.alive) p.respawnAtMs += pausedMs;
+        }
+        this.pauseStartedAt = null;
+      }
+
+      this.broadcast({ type: "opponent_connection", id, connected: true });
+      return id;
+    }
+    return null;
+  }
+
+  /** Re-sends whatever state a just-reconnected client needs to rebuild its
+   * view from scratch — lobby membership, and (if a match is already
+   * running) the same match_started message a fresh join would never get,
+   * so the client's existing handling reconstructs the match with no
+   * reconnect-specific client logic needed. */
+  resendStateTo(id: PlayerId): void {
+    this.send(id, { type: "lobby_update", phase: this.phase, players: this.playersSummary(), mapId: this.mapId });
+    if (this.phase === "active") {
+      this.send(id, {
+        type: "match_started",
+        serverTime: Date.now(),
+        mapId: this.map.id,
+        durationMs: Math.max(0, this.matchEndsAt - Date.now()),
+      });
+    }
+  }
+
   removePlayer(id: PlayerId): void {
     if (!this.players.has(id)) return;
+    const timer = this.disconnectTimers.get(id);
+    if (timer) {
+      clearTimeout(timer);
+      this.disconnectTimers.delete(id);
+    }
     this.players.delete(id);
     this.spawnIndexByPlayer.delete(id);
     this.broadcast({ type: "player_left", id });
@@ -122,7 +215,16 @@ export class Room {
         }
         break;
       case "input":
-        session.inputQueue.push(msg);
+        // Dropped, not queued, while paused for a disconnect — otherwise a
+        // still-connected player's client keeps sending inputs every tick
+        // regardless of the pause (it has no idea the room is frozen), they
+        // pile up in the queue untouched since drainInputs isn't called
+        // while paused, and then all land in a single burst the instant the
+        // pause ends — including any fire commands, which is a real
+        // "reconnect into a delayed volley" bug, not just a rendering
+        // hiccup. Dropping them means play cleanly resumes from whatever
+        // input arrives after the pause lifts, nothing backlogged.
+        if (this.pauseStartedAt === null) session.inputQueue.push(msg);
         break;
       case "ping":
         this.send(id, { type: "pong", t: msg.t, serverTime: Date.now() });
@@ -136,16 +238,17 @@ export class Room {
   /** Called at SIM_HZ by the global game loop for every active room. */
   tick(nowMs: number): void {
     this.tickCount++;
+    const paused = this.pauseStartedAt !== null;
 
-    if (this.phase === "countdown" && nowMs >= this.countdownEndsAt) {
+    if (this.phase === "countdown" && !paused && nowMs >= this.countdownEndsAt) {
       this.startMatch(nowMs);
     }
-    if (this.phase === "active") {
+    if (this.phase === "active" && !paused) {
       this.simulateActive(nowMs);
     }
 
     this.ticksSinceSnapshot++;
-    if (this.phase === "active" && this.ticksSinceSnapshot >= SNAPSHOT_EVERY_N_TICKS) {
+    if (this.phase === "active" && !paused && this.ticksSinceSnapshot >= SNAPSHOT_EVERY_N_TICKS) {
       this.ticksSinceSnapshot = 0;
       this.broadcastSnapshot(nowMs);
     }
@@ -354,14 +457,15 @@ export class Room {
   }
 
   private resetToLobby(): void {
+    this.pauseStartedAt = null;
     if (this.players.size === 0) return; // room was emptied while results were showing
     this.phase = "lobby";
     for (const p of this.players.values()) p.ready = false;
     this.broadcastLobby();
   }
 
-  private broadcastLobby(): void {
-    const players: RoomPlayerSummary[] = [...this.players.values()].map((p) => ({
+  private playersSummary(): RoomPlayerSummary[] {
+    return [...this.players.values()].map((p) => ({
       id: p.id,
       name: p.name,
       color: p.color,
@@ -370,7 +474,10 @@ export class Room {
       kills: p.combat.kills,
       deaths: p.combat.deaths,
     }));
-    this.broadcast({ type: "lobby_update", phase: this.phase, players, mapId: this.mapId });
+  }
+
+  private broadcastLobby(): void {
+    this.broadcast({ type: "lobby_update", phase: this.phase, players: this.playersSummary(), mapId: this.mapId });
   }
 
   private broadcastSnapshot(nowMs: number): void {

@@ -13,9 +13,13 @@ export class Hud {
   private scoreEl = document.getElementById("hud-score") as HTMLDivElement;
   private timerEl = document.getElementById("hud-timer") as HTMLDivElement;
   private damageFlashEl = document.getElementById("damage-flash") as HTMLDivElement;
+  private reconnectOverlayEl = document.getElementById("reconnect-overlay") as HTMLDivElement;
+  private reconnectTextEl = document.getElementById("reconnect-text") as HTMLDivElement;
 
   private hitmarkerRemainingMs = 0;
   private damageFlashRemainingMs = 0;
+  private reconnectBaseMessage = "";
+  private reconnectDeadlineMs = 0;
 
   updateWeapon(name: string, ammo: number, magSize: number, reloading: boolean): void {
     this.weaponNameEl.textContent = name;
@@ -70,6 +74,23 @@ export class Hud {
     this.setDead(false, 0);
   }
 
+  /** Shown both when the local connection drops and when the opponent's
+   * does — same overlay, different message. `graceMs` > 0 shows a live
+   * countdown to the reconnect deadline; 0 just shows the static message
+   * (used for "reconnecting..." on the dropped player's own screen, where
+   * there's no fixed deadline the way there is for the player waiting). */
+  showReconnectOverlay(message: string, graceMs: number): void {
+    this.reconnectOverlayEl.style.display = "flex";
+    this.reconnectBaseMessage = message;
+    this.reconnectDeadlineMs = graceMs > 0 ? Date.now() + graceMs : 0;
+    this.reconnectTextEl.textContent = message;
+  }
+
+  hideReconnectOverlay(): void {
+    this.reconnectOverlayEl.style.display = "none";
+    this.reconnectDeadlineMs = 0;
+  }
+
   pushFeed(message: string): void {
     const line = document.createElement("div");
     line.className = "feed-line";
@@ -86,6 +107,10 @@ export class Hud {
     if (this.damageFlashRemainingMs > 0) {
       this.damageFlashRemainingMs -= dtMs;
       this.damageFlashEl.style.opacity = String(Math.max(0, this.damageFlashRemainingMs / DAMAGE_FLASH_DURATION_MS));
+    }
+    if (this.reconnectDeadlineMs > 0) {
+      const secs = Math.max(0, Math.ceil((this.reconnectDeadlineMs - Date.now()) / 1000));
+      this.reconnectTextEl.textContent = `${this.reconnectBaseMessage} (${secs}s)`;
     }
   }
 }
