@@ -47,6 +47,8 @@ export class MatchController {
   private wasAlive = true;
   private localDeathAtMs = 0;
   private lastHealth = MAX_HEALTH;
+  private firstBloodClaimed = false;
+  private killStreaks = new Map<PlayerId, number>();
 
   constructor(
     private scene: THREE.Scene,
@@ -183,12 +185,42 @@ export class MatchController {
     }
   }
 
+  /** [kill count, callout label] — checked as an exact match (not a
+   * threshold), so each tier fires exactly once per streak rather than
+   * re-announcing "on a rampage" on every kill from 3 onward. */
+  private static readonly STREAK_TIERS: [number, string][] = [
+    [3, "is on a rampage"],
+    [5, "is unstoppable"],
+  ];
+
   private pushKillFeed(killerId: PlayerId | null, victimId: PlayerId, headshot: boolean): void {
     const name = (id: PlayerId) => (id === this.selfId ? "You" : this.playerNames.get(id) ?? "Player");
     const suffix = headshot ? " (headshot)" : "";
-    if (killerId === this.selfId) this.hud.pushFeed(`You eliminated ${name(victimId)}${suffix}`);
-    else if (victimId === this.selfId) this.hud.pushFeed(`${killerId ? name(killerId) : "World"} eliminated you${suffix}`);
-    else this.hud.pushFeed(`${killerId ? name(killerId) : "World"} eliminated ${name(victimId)}${suffix}`);
+
+    if (!this.firstBloodClaimed) {
+      this.firstBloodClaimed = true;
+      soundEngine.playAnnouncer("first-blood");
+      const killerLabel = killerId ? (killerId === this.selfId ? "You" : name(killerId)) : "World";
+      const victimLabel = victimId === this.selfId ? "you" : name(victimId);
+      this.hud.pushFeed(`First blood — ${killerLabel} eliminated ${victimLabel}${suffix}`);
+    } else if (killerId === this.selfId) {
+      this.hud.pushFeed(`You eliminated ${name(victimId)}${suffix}`);
+    } else if (victimId === this.selfId) {
+      this.hud.pushFeed(`${killerId ? name(killerId) : "World"} eliminated you${suffix}`);
+    } else {
+      this.hud.pushFeed(`${killerId ? name(killerId) : "World"} eliminated ${name(victimId)}${suffix}`);
+    }
+
+    this.killStreaks.set(victimId, 0);
+    if (killerId) {
+      const streak = (this.killStreaks.get(killerId) ?? 0) + 1;
+      this.killStreaks.set(killerId, streak);
+      const tier = MatchController.STREAK_TIERS.find(([count]) => count === streak);
+      if (tier) {
+        soundEngine.playAnnouncer("streak");
+        this.hud.pushFeed(`${name(killerId)} ${tier[1]}! (${streak} kills)`);
+      }
+    }
   }
 
   /** Angle (radians) from the local player's current facing to `attackerPos`

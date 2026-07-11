@@ -85,6 +85,22 @@ export class SoundEngine {
     this.noiseBurst({ freq: 350, q: 0.6, type: "lowpass", duration: 0.1, gain: 0.25 });
   }
 
+  /** Distinct from the regular hitmarker/kill sounds — this is an
+   * announcer-style cue for a standalone moment (first blood, a kill
+   * streak), not per-shot feedback, so it needs to read as clearly
+   * separate even layered right after a normal kill sound. */
+  playAnnouncer(kind: "first-blood" | "streak"): void {
+    if (!this.ready()) return;
+    if (kind === "first-blood") {
+      this.tone({ freq: 500, duration: 0.09, gain: 0.28, type: "triangle" });
+      this.tone({ freq: 750, duration: 0.14, gain: 0.3, type: "triangle", delaySec: 0.09 });
+    } else {
+      this.tone({ freq: 600, duration: 0.07, gain: 0.26, type: "triangle" });
+      this.tone({ freq: 800, duration: 0.07, gain: 0.28, type: "triangle", delaySec: 0.07 });
+      this.tone({ freq: 1050, duration: 0.16, gain: 0.32, type: "triangle", delaySec: 0.14 });
+    }
+  }
+
   playRespawn(): void {
     if (!this.ready()) return;
     this.tone({ freq: 440, freqEnd: 660, duration: 0.18, gain: 0.25, type: "sine" });
