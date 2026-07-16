@@ -226,6 +226,7 @@
     </div>
 
     <div id="imp-task-checklist" class="imp-task-checklist hidden"></div>
+    <div id="imp-task-aggregate" class="imp-task-aggregate hidden"></div>
 
     <div id="imp-task-prompt" class="imp-task-prompt hidden">
       <div id="imp-task-prompt-text" class="imp-task-prompt-text"></div>
@@ -233,6 +234,33 @@
         <div id="imp-task-progress-fill" class="imp-task-progress-fill"></div>
       </div>
       <div id="imp-task-sequence" class="imp-task-sequence hidden"></div>
+    </div>
+
+    <button id="btn-imp-call-meeting" class="btn-secondary imp-call-meeting-btn hidden">
+      Call Emergency Meeting (<span id="imp-meeting-remaining">1</span>)
+    </button>
+
+    <div id="screen-impostor-meeting" class="screen hidden">
+      <div class="screen-panel">
+        <h1 id="imp-meeting-title">Emergency Meeting</h1>
+        <div id="imp-meeting-timer" class="imp-meeting-timer"></div>
+
+        <div id="imp-meeting-discussion" class="imp-meeting-discussion">
+          <p class="subtitle">Discuss who you think the imposter is. Voting starts when the timer runs out.</p>
+        </div>
+
+        <div id="imp-meeting-voting" class="imp-meeting-voting hidden">
+          <div id="imp-vote-list" class="imp-vote-list"></div>
+        </div>
+
+        <div id="imp-meeting-result" class="imp-meeting-result hidden">
+          <div id="imp-meeting-result-text"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="imp-ejected-overlay" class="imp-ejected-overlay hidden">
+      <div>You were ejected.</div>
     </div>
 
     <div id="screen-stats" class="screen hidden">

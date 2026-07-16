@@ -19,16 +19,33 @@ import { ImpostorTaskHud } from "./ImpostorTaskHud";
 
 const PING_INTERVAL_MS = 2000;
 const INTERACT_KEY = "KeyE";
-const STATION_MARKER_COLOR = 0xf2c14e;
+const STATION_MARKER_ASSIGNED_COLOR = 0xf2c14e;
 const STATION_MARKER_DONE_COLOR = 0x4caf6a;
+const STATION_MARKER_UNASSIGNED_COLOR = 0x5a6b78;
+
+export interface ImpostorMatchCallbacks {
+  onRoleAssigned(role: ImpostorRole, fellowImposterNames: string[]): void;
+  onMatchEnded(reason: "tasks_complete" | "imposters_ejected" | "imposters_win_by_numbers"): void;
+  onMeetingStarted(calledByName: string, discussionEndsAt: number): void;
+  onMeetingVoting(votingEndsAt: number): void;
+  onMeetingResult(
+    ejectedId: PlayerId | null,
+    ejectedName: string | null,
+    ejectedRole: ImpostorRole | null,
+    wasSelf: boolean,
+    voteCounts: Record<string, number>,
+    skipCount: number
+  ): void;
+  onMeetingEnded(): void;
+}
 
 /**
- * Sibling to Duel's MatchController. Milestone 1 covered local movement
- * prediction + interpolated remote players + role reveal; this milestone
- * (2) layers task interaction on top of that same controller — proximity
- * detection, hold/sequence task messages, station markers in the world, and
- * the crewmate all-tasks-complete win condition. Still no meetings or the
- * imposter kill mechanic (M3/M4).
+ * Sibling to Duel's MatchController. M1 covered movement prediction + role
+ * reveal, M2 added the task system; this milestone (3) adds emergency
+ * meetings — proximity/task interaction all freezes the moment a meeting
+ * starts (no local prediction stepping, no task messages sent) exactly like
+ * the server independently freezes processing for everyone, so the two
+ * never disagree about whether the round is "live" right now.
  */
 export class ImpostorMatchController {
   readonly prediction: ImpostorPredictionController;
@@ -39,14 +56,21 @@ export class ImpostorMatchController {
   private unsubscribe: () => void;
   private pingTimer: ReturnType<typeof setInterval>;
   private role: ImpostorRole | null = null;
-  private onRoleAssigned: (role: ImpostorRole, fellowImposterNames: string[]) => void;
-  private onMatchEnded: () => void;
+  private callbacks: ImpostorMatchCallbacks;
 
   private input: InputManager;
   private taskHud: ImpostorTaskHud;
   private stations: TaskStationDef[] = [];
-  private completedStationIds = new Set<string>();
+  private assignedTaskIds = new Set<string>();
+  private completedTaskIds = new Set<string>();
   private stationMarkers = new Map<string, THREE.Mesh>();
+  private meetingsRemaining = 0;
+
+  /** True from imp_meeting_started until imp_meeting_ended (or the match
+   * ends) — gates both local movement prediction and task interaction, the
+   * client-side mirror of the server dropping input/task messages during a
+   * meeting. */
+  private frozen = false;
 
   // Local (client-only) interact-key edge tracking — InputManager only
   // exposes edge-triggered "just pressed" for one-shot actions and raw
@@ -74,14 +98,12 @@ export class ImpostorMatchController {
     spawn: SpawnPoint,
     colliders: readonly BoxCollider[],
     ladders: readonly BoxCollider[],
-    onRoleAssigned: (role: ImpostorRole, fellowImposterNames: string[]) => void,
-    onMatchEnded: () => void
+    callbacks: ImpostorMatchCallbacks
   ) {
     this.playerNames = playerNames;
     this.input = input;
     this.taskHud = taskHud;
-    this.onRoleAssigned = onRoleAssigned;
-    this.onMatchEnded = onMatchEnded;
+    this.callbacks = callbacks;
     this.prediction = new ImpostorPredictionController(spawn, colliders, input, net, camera, ladders);
 
     this.unsubscribe = net.onMessage((msg) => this.handleMessage(msg as ImpostorServerMessage));
@@ -91,12 +113,13 @@ export class ImpostorMatchController {
   }
 
   update(frameDt: number): void {
-    this.prediction.update(frameDt);
+    if (!this.frozen) {
+      this.prediction.update(frameDt);
+      if (this.role === "crewmate") this.updateTaskInteraction();
+    }
 
     const renderTime = this.clock.estimateServerTime() - INTERP_DELAY_MS;
     for (const rp of this.remotePlayersMap.values()) rp.update(renderTime);
-
-    if (this.role === "crewmate") this.updateTaskInteraction();
   }
 
   getShakeOffset(): { yaw: number; pitch: number; roll: number } {
@@ -109,6 +132,10 @@ export class ImpostorMatchController {
 
   get currentRole(): ImpostorRole | null {
     return this.role;
+  }
+
+  castVote(target: PlayerId | "skip"): void {
+    this.net.send({ type: "imp_cast_vote", target });
   }
 
   dispose(): void {
@@ -135,7 +162,7 @@ export class ImpostorMatchController {
         break;
       case "imp_role_assigned":
         this.role = msg.role;
-        this.onRoleAssigned(
+        this.callbacks.onRoleAssigned(
           msg.role,
           msg.fellowImposters.map((id) => this.playerNames.get(id) ?? "Player")
         );
@@ -145,10 +172,28 @@ export class ImpostorMatchController {
         this.taskHud.setStations(msg.stations);
         this.buildStationMarkers();
         break;
-      case "imp_task_progress":
-        this.completedStationIds = new Set(msg.stations.filter((s) => s.completed).map((s) => s.id));
-        this.taskHud.setProgress(msg.stations);
+      case "imp_task_assignment":
+        this.assignedTaskIds = new Set(msg.assignedIds);
+        this.taskHud.setAssignment(msg.assignedIds);
         this.refreshMarkerColors();
+        break;
+      case "imp_task_progress":
+        this.completedTaskIds = new Set(msg.completedIds);
+        this.taskHud.setProgress(msg.completedIds);
+        this.refreshMarkerColors();
+        // A sequence task's final (correct) keypress completes it directly
+        // server-side (ImpostorRoom.handleTaskKey) without ever sending a
+        // dedicated "sequence over" message — this progress update is the
+        // only signal that arrives. Without clearing activeSequenceStationId
+        // here, updateTaskInteraction's very first check keeps matching this
+        // now-finished station forever, permanently blocking it from ever
+        // looking for the player's next task.
+        if (this.activeSequenceStationId && this.completedTaskIds.has(this.activeSequenceStationId)) {
+          this.clearActiveSequence();
+        }
+        break;
+      case "imp_task_aggregate_progress":
+        this.taskHud.setAggregateProgress(msg.completed, msg.total);
         break;
       case "imp_task_sequence":
         this.activeSequenceStationId = msg.stationId;
@@ -161,8 +206,35 @@ export class ImpostorMatchController {
       case "imp_task_sequence_cancelled":
         if (this.activeSequenceStationId === msg.stationId) this.clearActiveSequence();
         break;
+      case "imp_meeting_count":
+        this.meetingsRemaining = msg.remaining;
+        if (this.role === "crewmate" && !this.frozen) this.taskHud.showMeetingButton(msg.remaining);
+        break;
+      case "imp_meeting_started":
+        this.frozen = true;
+        this.taskHud.hidePrompt();
+        this.taskHud.hideMeetingButton();
+        this.clearActiveSequence();
+        this.releaseHoldLocally();
+        this.callbacks.onMeetingStarted(this.playerNames.get(msg.calledBy) ?? "Someone", msg.discussionEndsAt);
+        break;
+      case "imp_meeting_voting":
+        this.callbacks.onMeetingVoting(msg.votingEndsAt);
+        break;
+      case "imp_meeting_result": {
+        const ejectedName = msg.ejectedId ? this.playerNames.get(msg.ejectedId) ?? "Player" : null;
+        const wasSelf = msg.ejectedId === this.selfId;
+        if (msg.ejectedId) this.removeRemotePlayer(msg.ejectedId);
+        this.callbacks.onMeetingResult(msg.ejectedId, ejectedName, msg.ejectedRole, wasSelf, msg.voteCounts, msg.skipCount);
+        break;
+      }
+      case "imp_meeting_ended":
+        this.frozen = false;
+        if (this.role === "crewmate") this.taskHud.showMeetingButton(this.meetingsRemaining);
+        this.callbacks.onMeetingEnded();
+        break;
       case "imp_match_ended":
-        this.onMatchEnded();
+        this.callbacks.onMatchEnded(msg.reason);
         break;
       default:
         break;
@@ -170,7 +242,9 @@ export class ImpostorMatchController {
   }
 
   private ingestSnapshot(serverTimeMs: number, players: ImpostorPlayerSnapshot[]): void {
+    const seenIds = new Set<PlayerId>([this.selfId]);
     for (const p of players) {
+      seenIds.add(p.id);
       if (p.id === this.selfId) {
         this.prediction.applyServerSnapshot(p);
         continue;
@@ -182,6 +256,20 @@ export class ImpostorMatchController {
       }
       rp.ingestSnapshot(p.position, p.yaw, serverTimeMs, p.color);
     }
+    // Ejected players stop appearing in snapshots entirely (see
+    // ImpostorRoom.broadcastSnapshot) — imp_meeting_result already disposes
+    // them explicitly the moment they're ejected, but this is a defensive
+    // backstop for anyone who somehow still has a stale entry.
+    for (const id of [...this.remotePlayersMap.keys()]) {
+      if (!seenIds.has(id)) this.removeRemotePlayer(id);
+    }
+  }
+
+  private removeRemotePlayer(id: PlayerId): void {
+    const rp = this.remotePlayersMap.get(id);
+    if (!rp) return;
+    rp.dispose(this.scene);
+    this.remotePlayersMap.delete(id);
   }
 
   private buildStationMarkers(): void {
@@ -189,7 +277,7 @@ export class ImpostorMatchController {
     this.stationMarkers.clear();
     for (const station of this.stations) {
       const geometry = new THREE.CylinderGeometry(0.4, 0.4, 1.2, 10);
-      const material = new THREE.MeshLambertMaterial({ color: STATION_MARKER_COLOR });
+      const material = new THREE.MeshLambertMaterial({ color: STATION_MARKER_UNASSIGNED_COLOR });
       const mesh = new THREE.Mesh(geometry, material);
       mesh.position.set(station.position.x, station.position.y, station.position.z);
       this.scene.add(mesh);
@@ -198,10 +286,19 @@ export class ImpostorMatchController {
     this.refreshMarkerColors();
   }
 
+  /** Colored by THIS player's own relationship to each station — done,
+   * assigned-and-pending, or not on their checklist at all. Completion is
+   * per-player now (see ImpostorRoom's file comment), so a station can't
+   * meaningfully be "done" from a shared/global point of view anymore. */
   private refreshMarkerColors(): void {
     for (const [id, mesh] of this.stationMarkers) {
       const material = mesh.material as THREE.MeshLambertMaterial;
-      material.color.setHex(this.completedStationIds.has(id) ? STATION_MARKER_DONE_COLOR : STATION_MARKER_COLOR);
+      const color = this.completedTaskIds.has(id)
+        ? STATION_MARKER_DONE_COLOR
+        : this.assignedTaskIds.has(id)
+        ? STATION_MARKER_ASSIGNED_COLOR
+        : STATION_MARKER_UNASSIGNED_COLOR;
+      material.color.setHex(color);
     }
   }
 
@@ -213,7 +310,8 @@ export class ImpostorMatchController {
 
   /** Proximity-based UI + interact-key handling. All server-facing sends
    * here are requests, not authoritative state — ImpostorRoom independently
-   * validates range, role, and station kind before acting on any of them. */
+   * validates range, role, assignment, and station kind before acting on
+   * any of them. */
   private updateTaskInteraction(): void {
     if (this.activeSequenceStationId) {
       this.updateActiveSequence();
@@ -272,7 +370,6 @@ export class ImpostorMatchController {
     this.activeSequenceStationId = null;
     this.activeSequenceKeys = [];
     this.activeSequenceProgress = 0;
-    this.taskHud.hidePrompt();
   }
 
   private releaseHold(): void {
@@ -282,12 +379,19 @@ export class ImpostorMatchController {
     this.holdingStationId = null;
   }
 
+  /** Like releaseHold, but for when a meeting yanks control away — no
+   * point telling the server "released" for a hold it already dropped the
+   * instant the meeting started, just clear the local tracking. */
+  private releaseHoldLocally(): void {
+    this.holdingStationId = null;
+  }
+
   private findNearestIncompleteStation(): TaskStationDef | null {
     const pos = this.prediction.physics.position;
     let best: TaskStationDef | null = null;
     let bestDist = Infinity;
     for (const station of this.stations) {
-      if (this.completedStationIds.has(station.id)) continue;
+      if (!this.assignedTaskIds.has(station.id) || this.completedTaskIds.has(station.id)) continue;
       const dx = pos.x - station.position.x;
       const dz = pos.z - station.position.z;
       const dist = Math.hypot(dx, dz);

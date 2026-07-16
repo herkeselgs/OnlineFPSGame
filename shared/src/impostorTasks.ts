@@ -24,13 +24,16 @@ export const HOLD_TASK_DURATION_MS = 3000;
 export const SEQUENCE_TASK_LENGTH = 4;
 export const TASK_INTERACT_RADIUS = 2.4;
 
+/** Each crewmate is randomly assigned this many of the map's stations as
+ * their own personal checklist (not the whole station list) — completing
+ * one doesn't remove it from the world, it just checks it off for that
+ * player, so there's always another (different) assigned task to go do
+ * next rather than the round running out of things for anyone to do the
+ * moment a handful of stations are claimed. */
+export const TASKS_PER_PLAYER = 4;
+
 /** Arrow keys rather than WASD — WASD already means movement, and a task
  * that asks you to stand still while pressing "move" keys would read as
  * self-contradictory. Arrow keys are unused by anything else in the game. */
 export const SEQUENCE_KEYS = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"] as const;
 export type SequenceKey = (typeof SEQUENCE_KEYS)[number];
-
-export interface TaskStationState {
-  id: string;
-  completed: boolean;
-}

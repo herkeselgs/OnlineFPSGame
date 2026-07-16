@@ -1,4 +1,4 @@
-import { SequenceKey, TaskStationDef, TaskStationState } from "@fps/shared";
+import { SequenceKey, TaskStationDef } from "@fps/shared";
 
 const ARROW_GLYPH: Record<SequenceKey, string> = {
   ArrowUp: "↑",
@@ -8,52 +8,88 @@ const ARROW_GLYPH: Record<SequenceKey, string> = {
 };
 
 /**
- * Owns the task checklist panel and the proximity interact-prompt DOM for
- * Imposter mode — its own small class rather than adding to Duel's Hud,
- * same sibling-class reasoning as everything else in this mode. Purely a
- * rendering layer: every value it's given (progress, sequence state) is
- * either server-confirmed or an explicitly-labeled local optimistic guess,
- * never something this class computes authoritatively itself.
+ * Owns the task checklist panel, the proximity interact-prompt DOM, and the
+ * emergency-meeting button for Imposter mode — its own small class rather
+ * than adding to Duel's Hud, same sibling-class reasoning as everything
+ * else in this mode. Purely a rendering layer: every value it's given
+ * (progress, sequence state) is either server-confirmed or an
+ * explicitly-labeled local optimistic guess, never something this class
+ * computes authoritatively itself.
+ *
+ * The checklist shows only THIS player's own assigned stations (see
+ * ImpostorRoom's per-player task model) — a crewmate never sees anyone
+ * else's list, matching Among Us.
  */
 export class ImpostorTaskHud {
   private checklistEl = document.getElementById("imp-task-checklist") as HTMLDivElement;
+  private aggregateEl = document.getElementById("imp-task-aggregate") as HTMLDivElement;
   private promptEl = document.getElementById("imp-task-prompt") as HTMLDivElement;
   private promptTextEl = document.getElementById("imp-task-prompt-text") as HTMLDivElement;
   private progressBarEl = document.getElementById("imp-task-progress-bar") as HTMLDivElement;
   private progressFillEl = document.getElementById("imp-task-progress-fill") as HTMLDivElement;
   private sequenceEl = document.getElementById("imp-task-sequence") as HTMLDivElement;
+  private meetingBtn = document.getElementById("btn-imp-call-meeting") as HTMLButtonElement;
+  private meetingRemainingEl = document.getElementById("imp-meeting-remaining") as HTMLSpanElement;
 
-  private stations: TaskStationDef[] = [];
+  private allStations: TaskStationDef[] = [];
+  private assignedIds: string[] = [];
   private completed = new Set<string>();
 
+  constructor(onCallMeeting: () => void) {
+    this.meetingBtn.addEventListener("click", onCallMeeting);
+  }
+
   setStations(stations: TaskStationDef[]): void {
-    this.stations = stations;
+    this.allStations = stations;
     this.renderChecklist();
   }
 
-  setProgress(states: TaskStationState[]): void {
-    this.completed = new Set(states.filter((s) => s.completed).map((s) => s.id));
+  setAssignment(assignedIds: string[]): void {
+    this.assignedIds = assignedIds;
     this.renderChecklist();
+  }
+
+  setProgress(completedIds: string[]): void {
+    this.completed = new Set(completedIds);
+    this.renderChecklist();
+  }
+
+  setAggregateProgress(completed: number, total: number): void {
+    this.aggregateEl.textContent = `Crew tasks: ${completed} / ${total}`;
   }
 
   private renderChecklist(): void {
     this.checklistEl.innerHTML = "";
-    for (const s of this.stations) {
-      const done = this.completed.has(s.id);
+    for (const id of this.assignedIds) {
+      const station = this.allStations.find((s) => s.id === id);
+      if (!station) continue;
+      const done = this.completed.has(id);
       const row = document.createElement("div");
       row.className = "imp-task-row" + (done ? " imp-task-done" : "");
-      row.textContent = `${done ? "✓" : "○"} ${s.name}`;
+      row.textContent = `${done ? "✓" : "○"} ${station.name}`;
       this.checklistEl.appendChild(row);
     }
   }
 
   show(): void {
     this.checklistEl.classList.remove("hidden");
+    this.aggregateEl.classList.remove("hidden");
   }
 
   hide(): void {
     this.checklistEl.classList.add("hidden");
+    this.aggregateEl.classList.add("hidden");
     this.hidePrompt();
+    this.hideMeetingButton();
+  }
+
+  showMeetingButton(remaining: number): void {
+    this.meetingBtn.classList.toggle("hidden", remaining <= 0);
+    this.meetingRemainingEl.textContent = String(remaining);
+  }
+
+  hideMeetingButton(): void {
+    this.meetingBtn.classList.add("hidden");
   }
 
   /** progress01 is a locally-estimated fraction (0-1) for the fill

@@ -1,5 +1,6 @@
 import {
   ClientInputMessage,
+  EMERGENCY_MEETINGS_PER_PLAYER,
   LAG_COMP_HISTORY_MS,
   PlayerId,
   PlayerPhysicsState,
@@ -22,10 +23,10 @@ export interface ActiveSequence {
 
 /**
  * Per-player state for an ImpostorRoom. Deliberately lighter than Duel's
- * PlayerSession — no combat/weapon fields, since this mode has neither yet
- * (M4 adds the imposter kill mechanic). Movement/connection fields mirror
- * PlayerSession exactly since that plumbing (physics stepping, reconnect,
- * lag-comp history for future hit validation) is identical.
+ * PlayerSession — no combat/weapon fields, since this mode has no kill
+ * mechanic yet (M4). Movement/connection fields mirror PlayerSession
+ * exactly since that plumbing (physics stepping, reconnect, lag-comp
+ * history for future hit validation) is identical.
  */
 export interface ImpostorPlayerSession {
   id: PlayerId;
@@ -51,6 +52,21 @@ export interface ImpostorPlayerSession {
 
   activeHold: ActiveHold | null;
   activeSequence: ActiveSequence | null;
+
+  /** This crewmate's own checklist for the round — a subset of the map's
+   * TASK_STATIONS, assigned at match start. Empty for imposters. Completing
+   * a station only affects this player's own completedTaskIds, never
+   * anyone else's — see ImpostorRoom's file comment on the per-player
+   * (not shared-pool) task model. */
+  assignedTaskIds: string[];
+  completedTaskIds: Set<string>;
+
+  emergencyMeetingsRemaining: number;
+  /** Set once this player is voted out. Ejected players are excluded from
+   * win-condition headcounts and further meetings/tasks, and their
+   * movement input stops being processed, but they stay connected as a
+   * spectator rather than being removed from the room outright. */
+  ejected: boolean;
 }
 
 export function createImpostorPlayerSession(id: PlayerId, ws: WebSocket, name: string, color: number): ImpostorPlayerSession {
@@ -71,5 +87,9 @@ export function createImpostorPlayerSession(id: PlayerId, ws: WebSocket, name: s
     history: new PositionHistory(LAG_COMP_HISTORY_MS),
     activeHold: null,
     activeSequence: null,
+    assignedTaskIds: [],
+    completedTaskIds: new Set(),
+    emergencyMeetingsRemaining: EMERGENCY_MEETINGS_PER_PLAYER,
+    ejected: false,
   };
 }

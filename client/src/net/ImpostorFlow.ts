@@ -23,6 +23,12 @@ import { ImpostorTaskHud } from "../game/ImpostorTaskHud";
 import { profileStore } from "../state/profile";
 import { NetClient } from "./NetClient";
 
+const MATCH_END_MESSAGES: Record<"tasks_complete" | "imposters_ejected" | "imposters_win_by_numbers", string> = {
+  tasks_complete: "Crewmates Win — All Tasks Complete!",
+  imposters_ejected: "Crewmates Win — All Imposters Ejected!",
+  imposters_win_by_numbers: "Imposters Win",
+};
+
 export type LoadMapFn = (mapId: string) => { map: MapDefinition; meshes: THREE.Mesh[] };
 
 const WS_URL = resolveWsUrl();
@@ -107,7 +113,17 @@ export class ImpostorFlow {
   private fellowImpostersEl = el("imp-fellow-imposters");
   private matchResultBanner = el("imp-match-result-banner");
   private matchResultText = el("imp-match-result-text");
-  private taskHud = new ImpostorTaskHud();
+  private taskHud = new ImpostorTaskHud(() => this.net.send({ type: "imp_call_meeting" }));
+
+  private screenMeeting = el("screen-impostor-meeting");
+  private meetingTitle = el("imp-meeting-title");
+  private meetingTimerEl = el("imp-meeting-timer");
+  private meetingDiscussionEl = el("imp-meeting-discussion");
+  private meetingVotingEl = el("imp-meeting-voting");
+  private voteListEl = el("imp-vote-list");
+  private meetingResultEl = el("imp-meeting-result");
+  private meetingResultTextEl = el("imp-meeting-result-text");
+  private ejectedOverlay = el("imp-ejected-overlay");
 
   private ready = false;
   private lobbyPhase: ImpostorPhase = "lobby";
@@ -119,6 +135,10 @@ export class ImpostorFlow {
   private lastHostId: PlayerId | null = null;
   private config: ImpostorRoomConfig = defaultImpostorConfig();
   private roleBannerTimer: ReturnType<typeof setTimeout> | null = null;
+  private meetingCountdownTimer: ReturnType<typeof setInterval> | null = null;
+  /** Round-scoped: who's already been voted out this round, so a second
+   * meeting's vote list excludes them. Cleared on every match start. */
+  private ejectedIds = new Set<PlayerId>();
 
   constructor(
     private scene: THREE.Scene,
@@ -155,6 +175,7 @@ export class ImpostorFlow {
     this.screenMenu.classList.add("hidden");
     this.screenLobby.classList.add("hidden");
     this.screenCountdown.classList.add("hidden");
+    this.screenMeeting.classList.add("hidden");
   }
 
   get activeMatch(): ImpostorMatchController | null {
@@ -247,6 +268,12 @@ export class ImpostorFlow {
           this.onMatchActiveChange(null);
           this.hideRoleBanner();
           this.hideMatchResultBanner();
+          this.hideMeetingScreen();
+          this.ejectedOverlay.classList.add("hidden");
+          if (this.meetingCountdownTimer) {
+            clearInterval(this.meetingCountdownTimer);
+            this.meetingCountdownTimer = null;
+          }
           this.showLobby();
         }
         this.renderLobby(msg.players);
@@ -356,6 +383,8 @@ export class ImpostorFlow {
     this.hideAllScreens();
     this.lockOverlay.classList.remove("hidden");
     if (this.match) this.match.dispose();
+    this.ejectedIds.clear();
+    this.ejectedOverlay.classList.add("hidden");
     const resolvedMapId = IMPOSTOR_MAPS[mapId] ? mapId : DEFAULT_IMPOSTOR_MAP_ID;
     // meshes (Duel uses these for hitscan raycasting) are unused here — this
     // mode has no shooting yet, loadMap's side effect of building the scene
@@ -373,8 +402,15 @@ export class ImpostorFlow {
       spawn,
       map.blocks,
       map.ladders,
-      (role, fellowNames) => this.showRoleBanner(role, fellowNames),
-      () => this.showMatchResult("Crewmates Win — All Tasks Complete!")
+      {
+        onRoleAssigned: (role, fellowNames) => this.showRoleBanner(role, fellowNames),
+        onMatchEnded: (reason) => this.showMatchResult(MATCH_END_MESSAGES[reason]),
+        onMeetingStarted: (calledByName, discussionEndsAt) => this.showMeetingDiscussion(calledByName, discussionEndsAt),
+        onMeetingVoting: (votingEndsAt) => this.showMeetingVoting(votingEndsAt),
+        onMeetingResult: (ejectedId, ejectedName, ejectedRole, wasSelf, voteCounts, skipCount) =>
+          this.showMeetingResult(ejectedId, ejectedName, ejectedRole, wasSelf, voteCounts, skipCount),
+        onMeetingEnded: () => this.hideMeetingScreen(),
+      }
     );
     this.onMatchActiveChange(this.match);
   }
@@ -386,6 +422,111 @@ export class ImpostorFlow {
 
   private hideMatchResultBanner(): void {
     this.matchResultBanner.classList.add("hidden");
+  }
+
+  // --- Meetings ---
+
+  private showMeetingDiscussion(calledByName: string, discussionEndsAt: number): void {
+    this.input.exitPointerLock();
+    this.hideAllScreens();
+    this.screenMeeting.classList.remove("hidden");
+    this.meetingTitle.textContent = `${calledByName} called an emergency meeting`;
+    this.meetingDiscussionEl.classList.remove("hidden");
+    this.meetingVotingEl.classList.add("hidden");
+    this.meetingResultEl.classList.add("hidden");
+    // No local onDone callback needed here -- the server drives the actual
+    // discussion -> voting transition and sends imp_meeting_voting on its
+    // own; this timer is purely the visible countdown.
+    this.startMeetingCountdown(discussionEndsAt);
+  }
+
+  private showMeetingVoting(votingEndsAt: number): void {
+    this.meetingTitle.textContent = "Vote to eject";
+    this.meetingDiscussionEl.classList.add("hidden");
+    this.meetingVotingEl.classList.remove("hidden");
+    this.meetingResultEl.classList.add("hidden");
+    this.renderVoteList();
+    this.startMeetingCountdown(votingEndsAt);
+  }
+
+  private renderVoteList(): void {
+    this.voteListEl.innerHTML = "";
+    for (const [id, name] of this.playerNames) {
+      if (this.ejectedIds.has(id)) continue;
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "btn-secondary imp-vote-option";
+      btn.textContent = id === this.selfId ? `${name} (you)` : name;
+      btn.addEventListener("click", () => this.castVote(id, btn));
+      this.voteListEl.appendChild(btn);
+    }
+    const skipBtn = document.createElement("button");
+    skipBtn.type = "button";
+    skipBtn.className = "btn-secondary imp-vote-option";
+    skipBtn.textContent = "Skip Vote";
+    skipBtn.addEventListener("click", () => this.castVote("skip", skipBtn));
+    this.voteListEl.appendChild(skipBtn);
+  }
+
+  private castVote(target: PlayerId | "skip", clickedBtn: HTMLButtonElement): void {
+    this.match?.castVote(target);
+    for (const child of Array.from(this.voteListEl.children)) {
+      child.classList.toggle("imp-vote-selected", child === clickedBtn);
+    }
+  }
+
+  private showMeetingResult(
+    ejectedId: PlayerId | null,
+    ejectedName: string | null,
+    ejectedRole: ImpostorRole | null,
+    wasSelf: boolean,
+    voteCounts: Record<string, number>,
+    skipCount: number
+  ): void {
+    void voteCounts;
+    if (ejectedId) this.ejectedIds.add(ejectedId);
+    if (this.meetingCountdownTimer) {
+      clearInterval(this.meetingCountdownTimer);
+      this.meetingCountdownTimer = null;
+    }
+    this.meetingDiscussionEl.classList.add("hidden");
+    this.meetingVotingEl.classList.add("hidden");
+    this.meetingResultEl.classList.remove("hidden");
+    this.meetingTitle.textContent = "Results";
+
+    if (ejectedName) {
+      const roleLabel = ejectedRole === "imposter" ? "was an Imposter" : "was not an Imposter";
+      this.meetingResultTextEl.textContent = `${ejectedName} was ejected — ${roleLabel}.`;
+    } else if (skipCount > 0) {
+      this.meetingResultTextEl.textContent = "No one was ejected (skipped or tied).";
+    } else {
+      this.meetingResultTextEl.textContent = "No one was ejected.";
+    }
+
+    if (wasSelf) {
+      this.ejectedOverlay.classList.remove("hidden");
+    }
+  }
+
+  private hideMeetingScreen(): void {
+    this.screenMeeting.classList.add("hidden");
+  }
+
+  /** Purely a visible countdown — the actual discussion -> voting -> result
+   * transitions are server-driven (imp_meeting_voting / imp_meeting_result
+   * arrive on their own), this never needs to trigger anything itself. */
+  private startMeetingCountdown(endsAt: number): void {
+    if (this.meetingCountdownTimer) clearInterval(this.meetingCountdownTimer);
+    const tick = () => {
+      const remaining = Math.max(0, Math.ceil((endsAt - Date.now()) / 1000));
+      this.meetingTimerEl.textContent = `${remaining}s`;
+      if (remaining <= 0 && this.meetingCountdownTimer) {
+        clearInterval(this.meetingCountdownTimer);
+        this.meetingCountdownTimer = null;
+      }
+    };
+    tick();
+    this.meetingCountdownTimer = setInterval(tick, 250);
   }
 
   private showRoleBanner(role: ImpostorRole, fellowImposterNames: string[]): void {
@@ -424,6 +565,13 @@ export class ImpostorFlow {
     }
     this.hideRoleBanner();
     this.hideMatchResultBanner();
+    this.hideMeetingScreen();
+    this.ejectedOverlay.classList.add("hidden");
+    this.ejectedIds.clear();
+    if (this.meetingCountdownTimer) {
+      clearInterval(this.meetingCountdownTimer);
+      this.meetingCountdownTimer = null;
+    }
     this.selfId = null;
     this.roomCode = null;
     this.playerNames.clear();

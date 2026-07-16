@@ -1,4 +1,4 @@
-import { SequenceKey, TaskStationDef, TaskStationState } from "./impostorTasks.js";
+import { SequenceKey, TaskStationDef } from "./impostorTasks.js";
 import { ClientInputMessage, PlayerId } from "./protocol.js";
 import { Vec3 } from "./vec.js";
 
@@ -60,9 +60,22 @@ export function defaultImpostorConfig(): ImpostorRoomConfig {
 export type ImpostorRole = "crewmate" | "imposter";
 
 /** lobby: configuring/readying up. countdown: locked in, about to start.
- * active: free-roam (tasks/meetings/kills land in later milestones — this
- * phase will grow richer, not change shape). */
-export type ImpostorPhase = "lobby" | "countdown" | "active";
+ * active: free-roam, tasks running. meeting: everyone frozen for
+ * discussion/voting. Kills (M4) don't add a phase of their own — they just
+ * happen during "active", same as a task does. */
+export type ImpostorPhase = "lobby" | "countdown" | "active" | "meeting";
+
+// --- Meetings / voting ---
+
+export const EMERGENCY_MEETINGS_PER_PLAYER = 1;
+export const MEETING_DISCUSSION_MS = 15000;
+export const MEETING_VOTING_MS = 20000;
+export const MEETING_RESULT_DISPLAY_MS = 6000;
+
+/** discussion: free talk (voice/text happens outside this app), no votes
+ * accepted yet. voting: votes accepted, switches the moment discussion's
+ * timer elapses. */
+export type MeetingSubPhase = "discussion" | "voting";
 
 // --- Lobby / roster ---
 
@@ -105,13 +118,21 @@ export type ImpostorClientMessage =
   | { type: "ping"; t: number }
   | { type: "rejoin_room"; code: string; token: string }
   /** Press/release of the interact key near a station. For "hold" stations
-   * this directly drives progress (see imp_task_progress). For "sequence"
-   * stations, holding:true is "start an attempt" — release has no meaning
-   * there and is ignored server-side. Server-validated: ignored unless the
-   * sender is a crewmate, in range, and the station isn't already done. */
+   * this directly drives progress. For "sequence" stations, holding:true is
+   * "start an attempt" — release has no meaning there and is ignored
+   * server-side. Server-validated: ignored unless the sender is a crewmate,
+   * the station is on THEIR assigned checklist, they're in range, and they
+   * haven't already completed it. */
   | { type: "imp_task_hold"; stationId: string; holding: boolean }
   /** One keypress during an active sequence attempt at stationId. */
   | { type: "imp_task_key"; stationId: string; key: string }
+  /** Crewmate-only, limited uses per match (see EMERGENCY_MEETINGS_PER_PLAYER)
+   * — ignored server-side otherwise. */
+  | { type: "imp_call_meeting" }
+  /** target is a PlayerId to vote for ejecting, or "skip". Sent during the
+   * voting sub-phase; a player may resend to change their vote before
+   * voting ends. */
+  | { type: "imp_cast_vote"; target: PlayerId | "skip" }
   | ClientInputMessage;
 
 export type ImpostorServerMessage =
@@ -138,9 +159,17 @@ export type ImpostorServerMessage =
    * everyone (imposters included, same as task icons being visible in
    * Among Us), only the ability to interact is crewmate-only. */
   | { type: "imp_task_stations"; stations: TaskStationDef[] }
-  /** Broadcast whenever any station's completed flag changes; carries the
-   * full list rather than a diff since it's at most a handful of entries. */
-  | { type: "imp_task_progress"; stations: TaskStationState[] }
+  /** Sent privately to each crewmate at match start: which stations (out of
+   * the full list above) are THEIRS to complete this round. Imposters get
+   * an empty list. */
+  | { type: "imp_task_assignment"; assignedIds: string[] }
+  /** Sent privately, only to the player it belongs to, whenever THEIR own
+   * completed set changes — this is personal progress, not a shared
+   * world-state flag, so unlike M2's version it's never broadcast. */
+  | { type: "imp_task_progress"; completedIds: string[] }
+  /** Broadcast crew-wide whenever anyone completes a task, so everyone can
+   * see overall pace ("12/20 tasks done") without seeing who's doing what. */
+  | { type: "imp_task_aggregate_progress"; completed: number; total: number }
   /** Sent privately to the player who just began a sequence attempt. */
   | { type: "imp_task_sequence"; stationId: string; sequence: SequenceKey[] }
   /** Sent privately after each keypress during a sequence attempt —
@@ -149,8 +178,31 @@ export type ImpostorServerMessage =
    * fail — these are meant to be quick, low-stakes interactions). */
   | { type: "imp_task_sequence_progress"; stationId: string; correctCount: number }
   /** Sent privately if an in-progress sequence attempt is cancelled
-   * (walked out of range, station completed by someone else meanwhile). */
+   * (walked out of range, a meeting started). */
   | { type: "imp_task_sequence_cancelled"; stationId: string }
-  | { type: "imp_match_ended"; reason: "tasks_complete" }
+  /** Sent privately to every crewmate at match start and again after they
+   * personally call a meeting, so their client knows whether to show the
+   * button as available. */
+  | { type: "imp_meeting_count"; remaining: number }
+  | { type: "imp_meeting_started"; calledBy: PlayerId; discussionEndsAt: number }
+  | { type: "imp_meeting_voting"; votingEndsAt: number }
+  /** voteCounts keys are PlayerIds; skipCount is separate since "skip" isn't
+   * a PlayerId. ejectedId/ejectedRole are both null on a tie or a skip
+   * majority — no one goes home. */
+  | {
+      type: "imp_meeting_result";
+      ejectedId: PlayerId | null;
+      ejectedRole: ImpostorRole | null;
+      voteCounts: Record<string, number>;
+      skipCount: number;
+    }
+  | {
+      type: "imp_match_ended";
+      reason: "tasks_complete" | "imposters_ejected" | "imposters_win_by_numbers";
+    }
+  /** The room resumed "active" after a meeting resolved without ending the
+   * match — the client-side signal to stop showing the meeting screen and
+   * resume normal play. */
+  | { type: "imp_meeting_ended" }
   | { type: "imp_player_left"; id: PlayerId }
   | { type: "pong"; t: number; serverTime: number };

@@ -22,6 +22,16 @@ html, body {
   outline: none;
 }
 
+/* Generic low-specificity fallback for any element toggling a "hidden"
+ * class — scoped rules like .screen.hidden/.lock-overlay.hidden (which
+ * exist for elements needing a non-"none" shown state, e.g. flex) still
+ * win via specificity where they're defined; this just covers everything
+ * else so "hidden" reliably means hidden without needing a bespoke rule
+ * per element. */
+.hidden {
+  display: none;
+}
+
 .crosshair {
   position: fixed;
   top: 50%;
@@ -1231,4 +1241,83 @@ html, body {
 .imp-seq-key-next {
   background: rgba(242, 193, 78, 0.3);
   color: #f2c14e;
+}
+
+.imp-task-aggregate {
+  position: fixed;
+  top: 90px;
+  right: 16px;
+  z-index: 11;
+  background: rgba(15, 22, 32, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  padding: 8px 14px;
+  font-size: 13px;
+  color: #f2f5f8;
+  pointer-events: none;
+}
+
+/* --- Imposter mode: emergency meetings --- */
+
+.imp-call-meeting-btn {
+  position: fixed;
+  bottom: 24px;
+  right: 16px;
+  z-index: 11;
+  padding: 10px 16px;
+  font-size: 13px;
+}
+
+.imp-meeting-timer {
+  font-size: 36px;
+  font-weight: 800;
+  color: #f2c14e;
+  text-align: center;
+  margin-bottom: 14px;
+}
+
+.imp-meeting-discussion .subtitle {
+  text-align: center;
+  margin-bottom: 0;
+}
+
+.imp-vote-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 10px;
+  max-height: 50vh;
+  overflow-y: auto;
+}
+
+.imp-vote-option {
+  width: 100%;
+}
+
+.imp-vote-option.imp-vote-selected {
+  background: rgba(159, 240, 138, 0.18);
+  border: 1px solid rgba(159, 240, 138, 0.4);
+  color: #f2f5f8;
+}
+
+.imp-meeting-result {
+  text-align: center;
+  font-size: 18px;
+  font-weight: 600;
+  color: #f2f5f8;
+  padding: 10px 0;
+}
+
+.imp-ejected-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 25;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(80, 8, 8, 0.5);
+  color: #f8dede;
+  font-size: 28px;
+  font-weight: 700;
+  pointer-events: none;
 }
