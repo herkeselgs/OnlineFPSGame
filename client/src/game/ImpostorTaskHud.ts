@@ -30,6 +30,7 @@ export class ImpostorTaskHud {
   private sequenceEl = document.getElementById("imp-task-sequence") as HTMLDivElement;
   private meetingBtn = document.getElementById("btn-imp-call-meeting") as HTMLButtonElement;
   private meetingRemainingEl = document.getElementById("imp-meeting-remaining") as HTMLSpanElement;
+  private killCooldownEl = document.getElementById("imp-kill-cooldown") as HTMLDivElement;
 
   private allStations: TaskStationDef[] = [];
   private assignedIds: string[] = [];
@@ -81,6 +82,7 @@ export class ImpostorTaskHud {
     this.aggregateEl.classList.add("hidden");
     this.hidePrompt();
     this.hideMeetingButton();
+    this.killCooldownEl.classList.add("hidden");
   }
 
   showMeetingButton(remaining: number): void {
@@ -127,5 +129,33 @@ export class ImpostorTaskHud {
 
   hidePrompt(): void {
     this.promptEl.classList.add("hidden");
+  }
+
+  /** Imposter-only prompt shown when a killable crewmate is in range and
+   * the kill cooldown is ready — deliberately reuses the same prompt DOM
+   * as tasks/body-report rather than a separate element, since a player is
+   * only ever eligible for one of these interactions at a time. */
+  showKillPrompt(targetName: string): void {
+    this.promptEl.classList.remove("hidden");
+    this.promptTextEl.textContent = `Press E — Kill ${targetName}`;
+    this.sequenceEl.classList.add("hidden");
+    this.progressBarEl.classList.add("hidden");
+  }
+
+  showReportPrompt(): void {
+    this.promptEl.classList.remove("hidden");
+    this.promptTextEl.textContent = "Press R — Report Body";
+    this.sequenceEl.classList.add("hidden");
+    this.progressBarEl.classList.add("hidden");
+  }
+
+  /** null hides the badge (cooldown ready / not an imposter). */
+  showKillCooldown(remainingSec: number | null): void {
+    if (remainingSec === null || remainingSec <= 0) {
+      this.killCooldownEl.classList.add("hidden");
+      return;
+    }
+    this.killCooldownEl.classList.remove("hidden");
+    this.killCooldownEl.textContent = `Kill ready in ${remainingSec.toFixed(0)}s`;
   }
 }

@@ -1,15 +1,20 @@
 import {
+  BODY_REPORT_RADIUS_M,
   BoxCollider,
+  GUNSHOT_AUDIBLE_RANGE_M,
   ImpostorPlayerSnapshot,
   ImpostorRole,
   ImpostorServerMessage,
   INTERP_DELAY_MS,
+  KILL_RANGE_M,
   PlayerId,
   SequenceKey,
   SpawnPoint,
   TaskStationDef,
+  Vec3,
 } from "@fps/shared";
 import * as THREE from "three";
+import { soundEngine } from "../audio/SoundEngine";
 import { ClockSync } from "../net/ClockSync";
 import { InputManager } from "../engine/InputManager";
 import { NetClient } from "../net/NetClient";
@@ -19,14 +24,27 @@ import { ImpostorTaskHud } from "./ImpostorTaskHud";
 
 const PING_INTERVAL_MS = 2000;
 const INTERACT_KEY = "KeyE";
+const REPORT_KEY = "KeyR";
 const STATION_MARKER_ASSIGNED_COLOR = 0xf2c14e;
 const STATION_MARKER_DONE_COLOR = 0x4caf6a;
 const STATION_MARKER_UNASSIGNED_COLOR = 0x5a6b78;
+const BODY_MARKER_COLOR = 0x8a2020;
+
+interface BodyInfo {
+  id: string;
+  victimId: PlayerId;
+  position: Vec3;
+}
 
 export interface ImpostorMatchCallbacks {
   onRoleAssigned(role: ImpostorRole, fellowImposterNames: string[]): void;
   onMatchEnded(reason: "tasks_complete" | "imposters_ejected" | "imposters_win_by_numbers"): void;
-  onMeetingStarted(calledByName: string, discussionEndsAt: number): void;
+  onMeetingStarted(
+    reason: "emergency" | "body_report",
+    calledByName: string,
+    victimName: string | null,
+    discussionEndsAt: number
+  ): void;
   onMeetingVoting(votingEndsAt: number): void;
   onMeetingResult(
     ejectedId: PlayerId | null,
@@ -37,6 +55,7 @@ export interface ImpostorMatchCallbacks {
     skipCount: number
   ): void;
   onMeetingEnded(): void;
+  onYouWereKilled(): void;
 }
 
 /**
@@ -65,6 +84,25 @@ export class ImpostorMatchController {
   private completedTaskIds = new Set<string>();
   private stationMarkers = new Map<string, THREE.Mesh>();
   private meetingsRemaining = 0;
+
+  /** Tracks each remote player's current `hasWeapon` flag from snapshots —
+   * used by an imposter to skip targeting fellow imposters (see
+   * findNearestKillableCrewmate), separate from ImpostorRemotePlayer's own
+   * copy (which only drives its weapon mesh's visibility). */
+  private remoteHasWeapon = new Map<PlayerId, boolean>();
+  private bodies = new Map<string, BodyInfo>();
+  private bodyMarkers = new Map<string, THREE.Mesh>();
+  /** Imposter-only; mirrors ImpostorRoom's killCooldownReadyAt for this
+   * client so the kill prompt/cooldown badge can be shown without waiting
+   * on a round trip. 0 until the first imp_kill_cooldown arrives. */
+  private killCooldownReadyAt = 0;
+
+  /** True from imp_you_were_killed for the rest of the round — like frozen,
+   * but distinct (a killed player never gets "unfrozen"). Gates the same
+   * task/kill/report interaction the meeting freeze does, so a just-killed
+   * crewmate's own screen doesn't keep showing "Press R — Report Body" for
+   * the body that is, in fact, them, underneath the killed overlay. */
+  private dead = false;
 
   /** True from imp_meeting_started until imp_meeting_ended (or the match
    * ends) — gates both local movement prediction and task interaction, the
@@ -115,7 +153,13 @@ export class ImpostorMatchController {
   update(frameDt: number): void {
     if (!this.frozen) {
       this.prediction.update(frameDt);
-      if (this.role === "crewmate") this.updateTaskInteraction();
+      if (!this.dead) {
+        if (this.role === "crewmate") {
+          if (!this.updateBodyReportInteraction()) this.updateTaskInteraction();
+        } else if (this.role === "imposter") {
+          this.updateKillInteraction();
+        }
+      }
     }
 
     const renderTime = this.clock.estimateServerTime() - INTERP_DELAY_MS;
@@ -145,6 +189,8 @@ export class ImpostorMatchController {
     this.remotePlayersMap.clear();
     for (const marker of this.stationMarkers.values()) this.disposeMarker(marker);
     this.stationMarkers.clear();
+    for (const marker of this.bodyMarkers.values()) this.disposeMarker(marker);
+    this.bodyMarkers.clear();
     this.taskHud.hide();
   }
 
@@ -214,9 +260,15 @@ export class ImpostorMatchController {
         this.frozen = true;
         this.taskHud.hidePrompt();
         this.taskHud.hideMeetingButton();
+        this.taskHud.showKillCooldown(null);
         this.clearActiveSequence();
         this.releaseHoldLocally();
-        this.callbacks.onMeetingStarted(this.playerNames.get(msg.calledBy) ?? "Someone", msg.discussionEndsAt);
+        this.callbacks.onMeetingStarted(
+          msg.reason,
+          this.playerNames.get(msg.calledBy) ?? "Someone",
+          msg.victimId ? this.playerNames.get(msg.victimId) ?? "Player" : null,
+          msg.discussionEndsAt
+        );
         break;
       case "imp_meeting_voting":
         this.callbacks.onMeetingVoting(msg.votingEndsAt);
@@ -236,6 +288,27 @@ export class ImpostorMatchController {
       case "imp_match_ended":
         this.callbacks.onMatchEnded(msg.reason);
         break;
+      case "imp_gunshot":
+        this.playGunshotAudio(msg.position);
+        break;
+      case "imp_you_were_killed":
+        this.dead = true;
+        this.taskHud.hidePrompt();
+        this.taskHud.showKillCooldown(null);
+        this.taskHud.hideMeetingButton();
+        this.callbacks.onYouWereKilled();
+        break;
+      case "imp_kill_cooldown":
+        this.killCooldownReadyAt = msg.readyAt;
+        break;
+      case "imp_body_spawned":
+        this.bodies.set(msg.bodyId, { id: msg.bodyId, victimId: msg.victimId, position: msg.position });
+        this.addBodyMarker(msg.bodyId, msg.position);
+        break;
+      case "imp_body_removed":
+        this.bodies.delete(msg.bodyId);
+        this.removeBodyMarker(msg.bodyId);
+        break;
       default:
         break;
     }
@@ -254,7 +327,8 @@ export class ImpostorMatchController {
         rp = new ImpostorRemotePlayer(this.scene, p.id, this.playerNames.get(p.id) ?? "Player");
         this.remotePlayersMap.set(p.id, rp);
       }
-      rp.ingestSnapshot(p.position, p.yaw, serverTimeMs, p.color);
+      rp.ingestSnapshot(p.position, p.yaw, serverTimeMs, p.color, p.hasWeapon);
+      this.remoteHasWeapon.set(p.id, p.hasWeapon);
     }
     // Ejected players stop appearing in snapshots entirely (see
     // ImpostorRoom.broadcastSnapshot) — imp_meeting_result already disposes
@@ -270,6 +344,7 @@ export class ImpostorMatchController {
     if (!rp) return;
     rp.dispose(this.scene);
     this.remotePlayersMap.delete(id);
+    this.remoteHasWeapon.delete(id);
   }
 
   private buildStationMarkers(): void {
@@ -401,5 +476,130 @@ export class ImpostorMatchController {
       }
     }
     return best;
+  }
+
+  // --- Kills (imposter-only) ---
+
+  /** Client-side hint only — ImpostorRoom independently re-validates role,
+   * alive/ejected state, range, and cooldown before actually killing anyone,
+   * same convention as every other interaction in this class. */
+  private updateKillInteraction(): void {
+    const cooldownRemainingMs = this.killCooldownReadyAt - Date.now();
+    if (cooldownRemainingMs > 0) {
+      this.taskHud.hidePrompt();
+      this.taskHud.showKillCooldown(cooldownRemainingMs / 1000);
+      return;
+    }
+    this.taskHud.showKillCooldown(null);
+
+    const target = this.findNearestKillableCrewmate();
+    if (!target) {
+      this.taskHud.hidePrompt();
+      return;
+    }
+    this.taskHud.showKillPrompt(this.playerNames.get(target) ?? "Player");
+    if (this.input.consumeJustPressed(INTERACT_KEY)) {
+      this.net.send({ type: "imp_kill", targetId: target });
+    }
+  }
+
+  private findNearestKillableCrewmate(): PlayerId | null {
+    const pos = this.prediction.physics.position;
+    let best: PlayerId | null = null;
+    let bestDist = Infinity;
+    for (const [id, rp] of this.remotePlayersMap) {
+      if (this.remoteHasWeapon.get(id)) continue; // fellow imposter, not a valid target
+      const dx = pos.x - rp.mesh.position.x;
+      const dy = pos.y - rp.mesh.position.y;
+      const dz = pos.z - rp.mesh.position.z;
+      const dist = Math.hypot(dx, dy, dz);
+      if (dist <= KILL_RANGE_M && dist < bestDist) {
+        best = id;
+        bestDist = dist;
+      }
+    }
+    return best;
+  }
+
+  // --- Bodies (crewmate-only) ---
+
+  /** Returns true if a body was in range this frame (and the report prompt
+   * is now showing) — the caller uses this to decide whether to fall back
+   * to normal task-interaction prompts, since both share the same prompt
+   * DOM and a player is only ever shown one at a time. */
+  private updateBodyReportInteraction(): boolean {
+    const nearest = this.findNearestBody();
+    if (!nearest) return false;
+    this.taskHud.showReportPrompt();
+    if (this.input.consumeJustPressed(REPORT_KEY)) {
+      this.net.send({ type: "imp_report_body", bodyId: nearest.id });
+    }
+    return true;
+  }
+
+  private findNearestBody(): BodyInfo | null {
+    const pos = this.prediction.physics.position;
+    let best: BodyInfo | null = null;
+    let bestDist = Infinity;
+    for (const body of this.bodies.values()) {
+      const dx = pos.x - body.position.x;
+      const dy = pos.y - body.position.y;
+      const dz = pos.z - body.position.z;
+      const dist = Math.hypot(dx, dy, dz);
+      if (dist <= BODY_REPORT_RADIUS_M && dist < bestDist) {
+        best = body;
+        bestDist = dist;
+      }
+    }
+    return best;
+  }
+
+  private addBodyMarker(bodyId: string, position: Vec3): void {
+    const geometry = new THREE.BoxGeometry(0.6, 0.3, 1.1);
+    const material = new THREE.MeshLambertMaterial({ color: BODY_MARKER_COLOR });
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.position.set(position.x, position.y, position.z);
+    this.scene.add(mesh);
+    this.bodyMarkers.set(bodyId, mesh);
+  }
+
+  private removeBodyMarker(bodyId: string): void {
+    const mesh = this.bodyMarkers.get(bodyId);
+    if (!mesh) return;
+    this.disposeMarker(mesh);
+    this.bodyMarkers.delete(bodyId);
+  }
+
+  // --- Gunshot audio ---
+
+  /** Distance/pan are computed here (client-side, from the local player's
+   * own predicted position) rather than server-side — the server only ever
+   * broadcasts where the shot happened (see imp_gunshot's comment in
+   * impostorProtocol.ts), same "each client figures out its own mix"
+   * approach real positional audio always uses. */
+  private playGunshotAudio(shotPosition: Vec3): void {
+    const pos = this.prediction.physics.position;
+    const dx = shotPosition.x - pos.x;
+    const dy = shotPosition.y - pos.y;
+    const dz = shotPosition.z - pos.z;
+    const dist = Math.hypot(dx, dy, dz);
+    if (dist > GUNSHOT_AUDIBLE_RANGE_M) return;
+
+    // Same relative-bearing math as MatchController.relativeAngleTo (Duel's
+    // damage-direction indicator): positive means "target is to my right"
+    // given this engine's yaw convention (decreasing yaw turns you right).
+    // sin() of that bearing maps cleanly onto stereo pan — 0 dead ahead/
+    // behind, +/-1 hard right/left — without needing full 3D panning.
+    let pan = 0;
+    const flatLen = Math.hypot(dx, dz);
+    if (flatLen > 1e-6) {
+      const yawToFaceShot = Math.atan2(-dx / flatLen, -dz / flatLen);
+      let relative = ((this.prediction.yaw - yawToFaceShot + Math.PI) % (Math.PI * 2)) - Math.PI;
+      if (relative < -Math.PI) relative += Math.PI * 2;
+      pan = Math.sin(relative);
+    }
+
+    const volumeMul = 1 - dist / GUNSHOT_AUDIBLE_RANGE_M;
+    soundEngine.playPositionalGunshot(pan, volumeMul);
   }
 }

@@ -100,6 +100,15 @@ export interface ImpostorPlayerSnapshot {
   pitch: number;
   onGround: boolean;
   color: number;
+  /** Purely a visual attribute — true for imposters, false for crewmates,
+   * fixed for the round. This IS the "carries a visible gun" tell from the
+   * design brief: any player who happens to be looking at this player's
+   * model can notice the weapon and deduce their role, the same as it
+   * would look in the game world. Deliberately not called "isImposter" —
+   * what's sent over the wire is a rendering fact (does this player model
+   * hold a gun), not a role label; the inference is the player's to make,
+   * same as it would be in the actual 3D scene. */
+  hasWeapon: boolean;
   /** Only meaningful to the player it belongs to, same convention as
    * Duel's PlayerSnapshot — used for input reconciliation. */
   lastProcessedSeq: number;
@@ -133,6 +142,13 @@ export type ImpostorClientMessage =
    * voting sub-phase; a player may resend to change their vote before
    * voting ends. */
   | { type: "imp_cast_vote"; target: PlayerId | "skip" }
+  /** Imposter-only, crewmate targets only, range/cooldown/alive all
+   * re-validated server-side regardless of what the client thinks it can
+   * see — ignored otherwise. */
+  | { type: "imp_kill"; targetId: PlayerId }
+  /** Crewmate-only; ignored unless the sender is actually near an
+   * unreported body with this id. */
+  | { type: "imp_report_body"; bodyId: string }
   | ClientInputMessage;
 
 export type ImpostorServerMessage =
@@ -184,7 +200,18 @@ export type ImpostorServerMessage =
    * personally call a meeting, so their client knows whether to show the
    * button as available. */
   | { type: "imp_meeting_count"; remaining: number }
-  | { type: "imp_meeting_started"; calledBy: PlayerId; discussionEndsAt: number }
+  /** "emergency": a living player pressed the call-meeting button, calledBy
+   * is who and victimId is absent. "body_report": calledBy found and
+   * reported victimId's body — the client shows "X found Y's body" instead
+   * of "X called an emergency meeting" for this one. Either way the
+   * discussion/voting/result flow after this is identical. */
+  | {
+      type: "imp_meeting_started";
+      reason: "emergency" | "body_report";
+      calledBy: PlayerId;
+      victimId?: PlayerId;
+      discussionEndsAt: number;
+    }
   | { type: "imp_meeting_voting"; votingEndsAt: number }
   /** voteCounts keys are PlayerIds; skipCount is separate since "skip" isn't
    * a PlayerId. ejectedId/ejectedRole are both null on a tie or a skip
@@ -200,6 +227,25 @@ export type ImpostorServerMessage =
       type: "imp_match_ended";
       reason: "tasks_complete" | "imposters_ejected" | "imposters_win_by_numbers";
     }
+  /** Broadcast to everyone in range — deliberately doesn't say who fired
+   * or who (if anyone) was hit, just where the sound came from. Clients
+   * compute their own distance/direction from `position` and decide
+   * locally whether it's close enough to hear at all; this is the mode's
+   * core risk mechanic (see GUNSHOT_AUDIBLE_RANGE_M) and has nothing to do
+   * with who's near enough to actually witness the kill. */
+  | { type: "imp_gunshot"; position: Vec3 }
+  /** Sent privately, only to the player who was killed. */
+  | { type: "imp_you_were_killed" }
+  /** Sent privately to the imposter after a successful kill (and once at
+   * match start) so their client knows when the cooldown clears. */
+  | { type: "imp_kill_cooldown"; readyAt: number }
+  /** Broadcast when a kill happens — a body is a discoverable world object,
+   * not an announcement of who died; nothing here reaches players who
+   * aren't already looking at this location, unlike imp_gunshot. */
+  | { type: "imp_body_spawned"; bodyId: string; victimId: PlayerId; position: Vec3 }
+  /** Broadcast once a body's been reported (starting a meeting) so every
+   * client removes its marker. */
+  | { type: "imp_body_removed"; bodyId: string }
   /** The room resumed "active" after a meeting resolved without ending the
    * match — the client-side signal to stop showing the meeting screen and
    * resume normal play. */

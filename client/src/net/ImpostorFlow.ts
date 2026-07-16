@@ -124,6 +124,7 @@ export class ImpostorFlow {
   private meetingResultEl = el("imp-meeting-result");
   private meetingResultTextEl = el("imp-meeting-result-text");
   private ejectedOverlay = el("imp-ejected-overlay");
+  private killedOverlay = el("imp-killed-overlay");
 
   private ready = false;
   private lobbyPhase: ImpostorPhase = "lobby";
@@ -139,6 +140,11 @@ export class ImpostorFlow {
   /** Round-scoped: who's already been voted out this round, so a second
    * meeting's vote list excludes them. Cleared on every match start. */
   private ejectedIds = new Set<PlayerId>();
+  /** Round-scoped: who's already been killed this round (learned the
+   * moment their body spawns, not just when it's reported), so the vote
+   * list doesn't offer to eject someone already dead. Cleared on every
+   * match start. */
+  private killedIds = new Set<PlayerId>();
 
   constructor(
     private scene: THREE.Scene,
@@ -270,6 +276,8 @@ export class ImpostorFlow {
           this.hideMatchResultBanner();
           this.hideMeetingScreen();
           this.ejectedOverlay.classList.add("hidden");
+          this.killedOverlay.classList.add("hidden");
+          this.killedIds.clear();
           if (this.meetingCountdownTimer) {
             clearInterval(this.meetingCountdownTimer);
             this.meetingCountdownTimer = null;
@@ -284,6 +292,9 @@ export class ImpostorFlow {
         break;
       case "imp_match_started":
         this.startMatch(msg.mapId);
+        break;
+      case "imp_body_spawned":
+        this.killedIds.add(msg.victimId);
         break;
       default:
         break;
@@ -384,7 +395,9 @@ export class ImpostorFlow {
     this.lockOverlay.classList.remove("hidden");
     if (this.match) this.match.dispose();
     this.ejectedIds.clear();
+    this.killedIds.clear();
     this.ejectedOverlay.classList.add("hidden");
+    this.killedOverlay.classList.add("hidden");
     const resolvedMapId = IMPOSTOR_MAPS[mapId] ? mapId : DEFAULT_IMPOSTOR_MAP_ID;
     // meshes (Duel uses these for hitscan raycasting) are unused here — this
     // mode has no shooting yet, loadMap's side effect of building the scene
@@ -405,11 +418,13 @@ export class ImpostorFlow {
       {
         onRoleAssigned: (role, fellowNames) => this.showRoleBanner(role, fellowNames),
         onMatchEnded: (reason) => this.showMatchResult(MATCH_END_MESSAGES[reason]),
-        onMeetingStarted: (calledByName, discussionEndsAt) => this.showMeetingDiscussion(calledByName, discussionEndsAt),
+        onMeetingStarted: (reason, calledByName, victimName, discussionEndsAt) =>
+          this.showMeetingDiscussion(reason, calledByName, victimName, discussionEndsAt),
         onMeetingVoting: (votingEndsAt) => this.showMeetingVoting(votingEndsAt),
         onMeetingResult: (ejectedId, ejectedName, ejectedRole, wasSelf, voteCounts, skipCount) =>
           this.showMeetingResult(ejectedId, ejectedName, ejectedRole, wasSelf, voteCounts, skipCount),
         onMeetingEnded: () => this.hideMeetingScreen(),
+        onYouWereKilled: () => this.killedOverlay.classList.remove("hidden"),
       }
     );
     this.onMatchActiveChange(this.match);
@@ -426,11 +441,19 @@ export class ImpostorFlow {
 
   // --- Meetings ---
 
-  private showMeetingDiscussion(calledByName: string, discussionEndsAt: number): void {
+  private showMeetingDiscussion(
+    reason: "emergency" | "body_report",
+    calledByName: string,
+    victimName: string | null,
+    discussionEndsAt: number
+  ): void {
     this.input.exitPointerLock();
     this.hideAllScreens();
     this.screenMeeting.classList.remove("hidden");
-    this.meetingTitle.textContent = `${calledByName} called an emergency meeting`;
+    this.meetingTitle.textContent =
+      reason === "body_report" && victimName
+        ? `${calledByName} found ${victimName}'s body`
+        : `${calledByName} called an emergency meeting`;
     this.meetingDiscussionEl.classList.remove("hidden");
     this.meetingVotingEl.classList.add("hidden");
     this.meetingResultEl.classList.add("hidden");
@@ -452,7 +475,7 @@ export class ImpostorFlow {
   private renderVoteList(): void {
     this.voteListEl.innerHTML = "";
     for (const [id, name] of this.playerNames) {
-      if (this.ejectedIds.has(id)) continue;
+      if (this.ejectedIds.has(id) || this.killedIds.has(id)) continue;
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "btn-secondary imp-vote-option";
@@ -567,7 +590,9 @@ export class ImpostorFlow {
     this.hideMatchResultBanner();
     this.hideMeetingScreen();
     this.ejectedOverlay.classList.add("hidden");
+    this.killedOverlay.classList.add("hidden");
     this.ejectedIds.clear();
+    this.killedIds.clear();
     if (this.meetingCountdownTimer) {
       clearInterval(this.meetingCountdownTimer);
       this.meetingCountdownTimer = null;

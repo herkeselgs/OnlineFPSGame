@@ -9,6 +9,7 @@ export * from "./playerCombatState.js";
 export * from "./positionHistory.js";
 export * from "./protocol.js";
 export * from "./impostorTasks.js";
+export * from "./impostorKill.js";
 export * from "./impostorMap.js";
 export * from "./impostorProtocol.js";
 export * from "./cosmetics.js";

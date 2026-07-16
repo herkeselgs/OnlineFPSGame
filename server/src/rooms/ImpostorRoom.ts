@@ -1,7 +1,9 @@
 import {
+  BODY_REPORT_RADIUS_M,
   defaultImpostorConfig,
   DEFAULT_IMPOSTOR_MAP_ID,
   EMERGENCY_MEETINGS_PER_PLAYER,
+  GUNSHOT_AUDIBLE_RANGE_M,
   ImpostorClientMessage,
   ImpostorPhase,
   ImpostorPlayerSnapshot,
@@ -13,6 +15,8 @@ import {
   IMPOSTOR_MAX_PLAYERS,
   IMPOSTOR_MIN_PLAYERS,
   isValidImposterCount,
+  KILL_COOLDOWN_MS,
+  KILL_RANGE_M,
   MATCH_COUNTDOWN_MS,
   MeetingSubPhase,
   MEETING_DISCUSSION_MS,
@@ -29,6 +33,7 @@ import {
   TaskStationDef,
   TASKS_PER_PLAYER,
   TASK_STATIONS,
+  Vec3,
 } from "@fps/shared";
 import { randomUUID } from "node:crypto";
 import { WebSocket } from "ws";
@@ -37,11 +42,19 @@ import { createImpostorPlayerSession, ImpostorPlayerSession } from "./ImpostorPl
 const SNAPSHOT_EVERY_N_TICKS = Math.round(SIM_HZ / SNAPSHOT_HZ);
 
 interface MeetingState {
+  reason: "emergency" | "body_report";
   calledBy: PlayerId;
+  victimId?: PlayerId;
   subPhase: MeetingSubPhase;
   discussionEndsAt: number;
   votingEndsAt: number;
   votes: Map<PlayerId, PlayerId | "skip">;
+}
+
+interface Body {
+  id: string;
+  victimId: PlayerId;
+  position: Vec3;
 }
 
 /**
@@ -77,6 +90,7 @@ export class ImpostorRoom {
 
   private readonly taskStations: readonly TaskStationDef[] = TASK_STATIONS;
   private meetingState: MeetingState | null = null;
+  private bodies = new Map<string, Body>();
 
   private pauseStartedAt: number | null = null;
   private disconnectTimers = new Map<PlayerId, ReturnType<typeof setTimeout>>();
@@ -192,15 +206,24 @@ export class ImpostorRoom {
       this.send(id, { type: "imp_task_assignment", assignedIds: session.assignedTaskIds });
       this.send(id, { type: "imp_task_progress", completedIds: [...session.completedTaskIds] });
       this.send(id, { type: "imp_meeting_count", remaining: session.emergencyMeetingsRemaining });
+      if (this.roles.get(id) === "imposter") {
+        this.send(id, { type: "imp_kill_cooldown", readyAt: session.killCooldownReadyAt });
+      }
     }
     const { completed, total } = this.computeAggregateProgress();
     this.send(id, { type: "imp_task_aggregate_progress", completed, total });
+
+    for (const body of this.bodies.values()) {
+      this.send(id, { type: "imp_body_spawned", bodyId: body.id, victimId: body.victimId, position: body.position });
+    }
 
     if (this.phase === "meeting" && this.meetingState) {
       if (this.meetingState.subPhase === "discussion") {
         this.send(id, {
           type: "imp_meeting_started",
+          reason: this.meetingState.reason,
           calledBy: this.meetingState.calledBy,
+          victimId: this.meetingState.victimId,
           discussionEndsAt: this.meetingState.discussionEndsAt,
         });
       } else {
@@ -250,7 +273,9 @@ export class ImpostorRoom {
         }
         break;
       case "input":
-        if (this.phase === "active" && this.pauseStartedAt === null && !session.ejected) session.inputQueue.push(msg);
+        if (this.phase === "active" && this.pauseStartedAt === null && !session.ejected && session.alive) {
+          session.inputQueue.push(msg);
+        }
         break;
       case "ping":
         this.send(id, { type: "pong", t: msg.t, serverTime: Date.now() });
@@ -269,6 +294,12 @@ export class ImpostorRoom {
         break;
       case "imp_cast_vote":
         if (this.phase === "meeting" && this.pauseStartedAt === null) this.handleCastVote(session, msg.target);
+        break;
+      case "imp_kill":
+        if (this.phase === "active" && this.pauseStartedAt === null) this.handleKill(session, msg.targetId, Date.now());
+        break;
+      case "imp_report_body":
+        if (this.phase === "active" && this.pauseStartedAt === null) this.handleReportBody(session, msg.bodyId);
         break;
     }
   }
@@ -320,6 +351,7 @@ export class ImpostorRoom {
     this.phase = "active";
     this.assignRoles();
     this.meetingState = null;
+    this.bodies.clear();
 
     let spawnIndex = 0;
     for (const [id, session] of this.players) {
@@ -329,6 +361,10 @@ export class ImpostorRoom {
       session.activeHold = null;
       session.activeSequence = null;
       session.ejected = false;
+      session.alive = true;
+      // Grace period before anyone can be killed, so crew has a moment to
+      // scatter from spawn rather than getting picked off immediately.
+      session.killCooldownReadyAt = nowMs + KILL_COOLDOWN_MS;
       session.emergencyMeetingsRemaining = EMERGENCY_MEETINGS_PER_PLAYER;
       session.completedTaskIds = new Set();
       session.assignedTaskIds = this.roles.get(id) === "crewmate" ? this.pickAssignedTasks() : [];
@@ -337,6 +373,10 @@ export class ImpostorRoom {
     this.broadcast({ type: "imp_match_started", serverTime: nowMs, mapId: this.mapId });
     for (const [id, role] of this.roles) {
       this.send(id, { type: "imp_role_assigned", role, fellowImposters: this.fellowImpostersFor(id, role) });
+      if (role === "imposter") {
+        const session = this.players.get(id)!;
+        this.send(id, { type: "imp_kill_cooldown", readyAt: session.killCooldownReadyAt });
+      }
     }
     this.broadcast({ type: "imp_task_stations", stations: [...this.taskStations] });
     for (const [id, session] of this.players) {
@@ -429,6 +469,7 @@ export class ImpostorRoom {
   }
 
   private handleTaskHold(session: ImpostorPlayerSession, stationId: string, holding: boolean): void {
+    if (session.ejected || !session.alive) return;
     if (this.roles.get(session.id) !== "crewmate") return;
     if (!session.assignedTaskIds.includes(stationId) || session.completedTaskIds.has(stationId)) return;
     const station = this.taskStations.find((s) => s.id === stationId);
@@ -450,6 +491,7 @@ export class ImpostorRoom {
   }
 
   private handleTaskKey(session: ImpostorPlayerSession, stationId: string, key: string): void {
+    if (session.ejected || !session.alive) return;
     if (this.roles.get(session.id) !== "crewmate") return;
     const seq = session.activeSequence;
     if (!seq || seq.stationId !== stationId) return;
@@ -480,15 +522,19 @@ export class ImpostorRoom {
     this.checkTasksWinCondition();
   }
 
+  /** Excludes dead/ejected crewmates from both sides of the fraction — a
+   * killed player's unfinished tasks would otherwise keep the aggregate
+   * stuck below 100% forever, well past the point where the remaining crew
+   * could ever fix it. */
   private computeAggregateProgress(): { completed: number; total: number } {
-    const crew = [...this.players.values()].filter((p) => this.roles.get(p.id) === "crewmate");
+    const crew = [...this.players.values()].filter((p) => !p.ejected && p.alive && this.roles.get(p.id) === "crewmate");
     const total = crew.reduce((sum, p) => sum + p.assignedTaskIds.length, 0);
     const completed = crew.reduce((sum, p) => sum + p.completedTaskIds.size, 0);
     return { completed, total };
   }
 
   private checkTasksWinCondition(): boolean {
-    const crew = [...this.players.values()].filter((p) => !p.ejected && this.roles.get(p.id) === "crewmate");
+    const crew = [...this.players.values()].filter((p) => !p.ejected && p.alive && this.roles.get(p.id) === "crewmate");
     if (crew.length === 0) return false;
     const allDone = crew.every((p) => p.completedTaskIds.size >= p.assignedTaskIds.length);
     if (!allDone) return false;
@@ -501,20 +547,22 @@ export class ImpostorRoom {
   // --- Meetings / voting ---
 
   private handleCallMeeting(session: ImpostorPlayerSession): void {
-    if (session.ejected) return;
+    if (session.ejected || !session.alive) return;
     if (this.roles.get(session.id) !== "crewmate") return;
     if (session.emergencyMeetingsRemaining <= 0) return;
 
     session.emergencyMeetingsRemaining--;
     this.send(session.id, { type: "imp_meeting_count", remaining: session.emergencyMeetingsRemaining });
-    this.startMeeting(session.id);
+    this.startMeeting(session.id, { reason: "emergency" });
   }
 
-  private startMeeting(calledBy: PlayerId): void {
+  private startMeeting(calledBy: PlayerId, opts: { reason: "emergency" | "body_report"; victimId?: PlayerId }): void {
     this.phase = "meeting";
     const now = Date.now();
     this.meetingState = {
+      reason: opts.reason,
       calledBy,
+      victimId: opts.victimId,
       subPhase: "discussion",
       discussionEndsAt: now + MEETING_DISCUSSION_MS,
       votingEndsAt: 0,
@@ -534,7 +582,13 @@ export class ImpostorRoom {
       session.inputQueue.length = 0;
     }
 
-    this.broadcast({ type: "imp_meeting_started", calledBy, discussionEndsAt: this.meetingState.discussionEndsAt });
+    this.broadcast({
+      type: "imp_meeting_started",
+      reason: opts.reason,
+      calledBy,
+      victimId: opts.victimId,
+      discussionEndsAt: this.meetingState.discussionEndsAt,
+    });
   }
 
   private startVoting(nowMs: number): void {
@@ -545,16 +599,16 @@ export class ImpostorRoom {
   }
 
   private handleCastVote(session: ImpostorPlayerSession, target: PlayerId | "skip"): void {
-    if (session.ejected || !this.meetingState || this.meetingState.subPhase !== "voting") return;
+    if (session.ejected || !session.alive || !this.meetingState || this.meetingState.subPhase !== "voting") return;
     if (target !== "skip") {
       const targetSession = this.players.get(target);
-      if (!targetSession || targetSession.ejected) return;
+      if (!targetSession || targetSession.ejected || !targetSession.alive) return;
     }
     this.meetingState.votes.set(session.id, target);
 
     // If everyone who can still vote already has, resolve immediately
     // instead of sitting out the rest of the timer.
-    const eligibleVoters = [...this.players.values()].filter((p) => !p.ejected && p.connected);
+    const eligibleVoters = [...this.players.values()].filter((p) => !p.ejected && p.alive && p.connected);
     if (eligibleVoters.every((p) => this.meetingState!.votes.has(p.id))) {
       this.resolveVoting();
     }
@@ -607,13 +661,15 @@ export class ImpostorRoom {
 
   private afterMeetingResult(): void {
     if (this.players.size === 0) return;
-    if (this.checkEjectionWinConditions()) return;
+    if (this.checkNumbersWinCondition()) return;
     this.phase = "active";
     this.broadcast({ type: "imp_meeting_ended" });
   }
 
-  private checkEjectionWinConditions(): boolean {
-    const remaining = [...this.players.values()].filter((p) => !p.ejected);
+  /** Checked after every ejection and every kill — either can flip the
+   * headcount in the imposters' favor or eliminate them outright. */
+  private checkNumbersWinCondition(): boolean {
+    const remaining = [...this.players.values()].filter((p) => !p.ejected && p.alive);
     const remainingImposters = remaining.filter((p) => this.roles.get(p.id) === "imposter").length;
     const remainingCrew = remaining.length - remainingImposters;
 
@@ -628,6 +684,56 @@ export class ImpostorRoom {
       return true;
     }
     return false;
+  }
+
+  // --- Kills / bodies ---
+
+  private handleKill(session: ImpostorPlayerSession, targetId: PlayerId, nowMs: number): void {
+    if (session.ejected || !session.alive) return;
+    if (this.roles.get(session.id) !== "imposter") return;
+    if (nowMs < session.killCooldownReadyAt) return;
+
+    const target = this.players.get(targetId);
+    if (!target || target.ejected || !target.alive) return;
+    if (this.roles.get(targetId) !== "crewmate") return;
+    if (!this.withinDistance(session.physics.position, target.physics.position, KILL_RANGE_M)) return;
+
+    target.alive = false;
+    target.activeHold = null;
+    target.activeSequence = null;
+    target.inputQueue.length = 0;
+    this.send(targetId, { type: "imp_you_were_killed" });
+
+    session.killCooldownReadyAt = nowMs + KILL_COOLDOWN_MS;
+    this.send(session.id, { type: "imp_kill_cooldown", readyAt: session.killCooldownReadyAt });
+
+    this.broadcast({ type: "imp_gunshot", position: { ...session.physics.position } });
+
+    const body: Body = { id: randomUUID(), victimId: targetId, position: { ...target.physics.position } };
+    this.bodies.set(body.id, body);
+    this.broadcast({ type: "imp_body_spawned", bodyId: body.id, victimId: body.victimId, position: body.position });
+
+    const { completed, total } = this.computeAggregateProgress();
+    this.broadcast({ type: "imp_task_aggregate_progress", completed, total });
+
+    this.checkNumbersWinCondition();
+  }
+
+  private handleReportBody(session: ImpostorPlayerSession, bodyId: string): void {
+    if (session.ejected || !session.alive) return;
+    if (this.roles.get(session.id) !== "crewmate") return;
+
+    const body = this.bodies.get(bodyId);
+    if (!body) return;
+    if (!this.withinDistance(session.physics.position, body.position, BODY_REPORT_RADIUS_M)) return;
+
+    this.bodies.delete(bodyId);
+    this.broadcast({ type: "imp_body_removed", bodyId });
+    this.startMeeting(session.id, { reason: "body_report", victimId: body.victimId });
+  }
+
+  private withinDistance(a: Vec3, b: Vec3, range: number): boolean {
+    return Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z) <= range;
   }
 
   private drainInputs(session: ImpostorPlayerSession, nowMs: number): void {
@@ -655,6 +761,7 @@ export class ImpostorRoom {
     this.phase = "lobby";
     this.roles.clear();
     this.meetingState = null;
+    this.bodies.clear();
     for (const p of this.players.values()) {
       p.ready = false;
       p.activeHold = null;
@@ -662,6 +769,8 @@ export class ImpostorRoom {
       p.assignedTaskIds = [];
       p.completedTaskIds = new Set();
       p.ejected = false;
+      p.alive = true;
+      p.killCooldownReadyAt = 0;
     }
     this.broadcastLobby();
   }
@@ -688,7 +797,7 @@ export class ImpostorRoom {
 
   private broadcastSnapshot(nowMs: number): void {
     const players: ImpostorPlayerSnapshot[] = [...this.players.values()]
-      .filter((p) => !p.ejected)
+      .filter((p) => !p.ejected && p.alive)
       .map((p) => ({
         id: p.id,
         position: p.physics.position,
@@ -697,6 +806,7 @@ export class ImpostorRoom {
         pitch: p.pitch,
         onGround: p.physics.onGround,
         color: p.color,
+        hasWeapon: this.roles.get(p.id) === "imposter",
         lastProcessedSeq: p.lastProcessedSeq,
       }));
     this.broadcast({ type: "imp_snapshot", tick: this.tickCount, serverTime: nowMs, players });

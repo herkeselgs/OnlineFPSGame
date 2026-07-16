@@ -67,6 +67,17 @@ export interface ImpostorPlayerSession {
    * movement input stops being processed, but they stay connected as a
    * spectator rather than being removed from the room outright. */
   ejected: boolean;
+
+  /** Set once this crewmate is killed by an imposter. Same treatment as
+   * ejected (excluded from headcounts/snapshots/input) but a distinct flag
+   * — a player can only ever be one or the other, but the two happen
+   * through completely different flows and the client shows different
+   * messaging ("you were ejected" vs "you were killed"). */
+  alive: boolean;
+  /** Imposter-only; when they can next kill. Set to now+KILL_COOLDOWN_MS
+   * both at match start (a brief grace period for crew to scatter) and
+   * after every kill. Meaningless for crewmates. */
+  killCooldownReadyAt: number;
 }
 
 export function createImpostorPlayerSession(id: PlayerId, ws: WebSocket, name: string, color: number): ImpostorPlayerSession {
@@ -91,5 +102,7 @@ export function createImpostorPlayerSession(id: PlayerId, ws: WebSocket, name: s
     completedTaskIds: new Set(),
     emergencyMeetingsRemaining: EMERGENCY_MEETINGS_PER_PLAYER,
     ejected: false,
+    alive: true,
+    killCooldownReadyAt: 0,
   };
 }

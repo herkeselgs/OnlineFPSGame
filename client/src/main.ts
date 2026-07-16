@@ -298,5 +298,6 @@ if (import.meta.env.DEV) {
     scene,
     multiplayer,
     impostorFlow,
+    soundEngine,
   };
 }
