@@ -22,14 +22,19 @@ html, body {
   outline: none;
 }
 
-/* Generic low-specificity fallback for any element toggling a "hidden"
- * class — scoped rules like .screen.hidden/.lock-overlay.hidden (which
- * exist for elements needing a non-"none" shown state, e.g. flex) still
- * win via specificity where they're defined; this just covers everything
- * else so "hidden" reliably means hidden without needing a bespoke rule
- * per element. */
+/* Generic fallback for any element toggling a "hidden" class, so "hidden"
+ * reliably means hidden without needing a bespoke rule per element.
+ * !important is load-bearing, not decoration: this rule and something
+ * like .imp-ejected-overlay { display: flex; } both have equal (0,1,0)
+ * specificity, so without it, plain CSS cascade order decides — and
+ * .imp-ejected-overlay is declared LATER in this file, so it would win
+ * and show the element even while "hidden" is applied. (Found the hard
+ * way: an ejected-player overlay that rendered on every match start
+ * regardless of any actual ejection, because its own "hidden" class was
+ * silently losing that cascade tie.) The pre-existing scoped rules
+ * (.screen.hidden etc.) are redundant with this but harmless to keep. */
 .hidden {
-  display: none;
+  display: none !important;
 }
 
 .crosshair {

@@ -125,6 +125,7 @@ function startPractice(mapId: string): void {
   const { map, meshes } = loadMap(mapId);
   practice = new PracticeMode(scene, camera, input, hud, map, meshes);
   activeMode = practice;
+  hud.showWeaponHud();
   lockTitle.textContent = `${map.name} — Practice Mode`;
   lockOverlay.classList.remove("hidden");
 }
@@ -145,13 +146,25 @@ btnPractice.addEventListener("click", () => {
 const multiplayer = new MultiplayerFlow(scene, camera, input, hud, loadMap, (match: MatchController | null) => {
   stopPractice();
   activeMode = match;
-  if (match) lockOverlay.classList.add("hidden");
+  if (match) {
+    hud.showWeaponHud();
+    lockOverlay.classList.add("hidden");
+  }
 });
 
 const impostorFlow = new ImpostorFlow(scene, camera, input, loadMap, (match: ImpostorMatchController | null) => {
   stopPractice();
   activeMode = match;
-  if (match) lockOverlay.classList.add("hidden");
+  if (match) {
+    // Imposter mode has no health/ammo/weapon of its own (crewmates are
+    // unarmed) — without this, Duel's HUD elements are CSS-visible by
+    // default from page load and only ever masked by whichever `.screen`
+    // covers the viewport, so stale/default Duel HUD content (100 health,
+    // 24/24 Rifle) shows through the instant live Imposter gameplay starts
+    // with no screen covering it.
+    hud.hideMatchInfo();
+    lockOverlay.classList.add("hidden");
+  }
 });
 
 new ProgressionUI(

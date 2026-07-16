@@ -20,6 +20,9 @@ export class Hud {
   private damageDirEl = document.getElementById("damage-direction") as HTMLDivElement;
   private spawnShieldEl = document.getElementById("hud-spawn-shield") as HTMLDivElement;
   private spawnShieldTextEl = document.getElementById("hud-spawn-shield-text") as HTMLSpanElement;
+  private crosshairEl = document.getElementById("crosshair") as HTMLDivElement;
+  private healthWrapEl = document.getElementById("hud-health-wrap") as HTMLDivElement;
+  private weaponHudEl = document.getElementById("weapon-hud") as HTMLDivElement;
 
   private hitmarkerRemainingMs = 0;
   private damageFlashRemainingMs = 0;
@@ -106,16 +109,34 @@ export class Hud {
     this.damageDirEl.style.opacity = "1";
   }
 
-  /** Called when leaving a match — score/timer are match-only HUD elements
-   * and shouldn't linger with stale content in practice mode or the menu. */
+  /** Called when leaving a Duel match (or never entering one, e.g. an
+   * Imposter match starting instead) — every element here is CSS-visible
+   * by default from page load (only ever masked by whichever full-screen
+   * `.screen` currently covers the viewport), so without an explicit hide,
+   * stale Duel HUD content (crosshair, health, ammo) shows through the
+   * instant a mode with no Duel-style HUD of its own — Imposter — starts
+   * live gameplay with no `.screen` covering it. showWeaponHud() is the
+   * matching call Duel's own match/practice start makes to bring them
+   * back. */
   hideMatchInfo(): void {
     this.scoreEl.style.display = "none";
     this.timerEl.style.display = "none";
     this.pingEl.style.display = "none";
     this.spawnShieldEl.style.display = "none";
+    this.crosshairEl.style.display = "none";
+    this.healthWrapEl.style.display = "none";
+    this.weaponHudEl.style.display = "none";
     this.damageDirRemainingMs = 0;
     this.damageDirEl.style.opacity = "0";
     this.setDead(false, 0);
+  }
+
+  /** Restores the crosshair/health/weapon HUD — see hideMatchInfo's
+   * comment. Called at the start of a Duel match or practice session. */
+  showWeaponHud(): void {
+    this.crosshairEl.style.display = "block";
+    this.healthWrapEl.style.display = "flex";
+    this.weaponHudEl.style.display = "block";
   }
 
   /** Shown both when the local connection drops and when the opponent's
