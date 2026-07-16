@@ -214,7 +214,7 @@ export class MultiplayerFlow {
 
   private connectThen(action: () => void): void {
     if (this.unsubscribe) this.unsubscribe();
-    this.unsubscribe = this.net.onMessage((msg) => this.handleMessage(msg));
+    this.unsubscribe = this.net.onMessage((msg) => this.handleMessage(msg as ServerMessage));
     const unsubConn = this.net.onConnectionChange((connected) => {
       if (connected) {
         unsubConn();

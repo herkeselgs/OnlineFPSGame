@@ -69,7 +69,7 @@ export class MatchController {
     this.muzzleFlash = new MuzzleFlashEffect(camera);
     this.raycastables = [...mapMeshes];
 
-    this.unsubscribe = net.onMessage((msg) => this.handleMessage(msg));
+    this.unsubscribe = net.onMessage((msg) => this.handleMessage(msg as ServerMessage));
     this.pingTimer = setInterval(() => net.send({ type: "ping", t: Date.now() }), PING_INTERVAL_MS);
     net.send({ type: "ping", t: Date.now() });
   }

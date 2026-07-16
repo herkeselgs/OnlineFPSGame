@@ -1023,3 +1023,99 @@ html, body {
     margin-bottom: 10px;
   }
 }
+
+/* --- Mode tabs (Duel / Imposter) on the main menu --- */
+
+.mode-tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 18px;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 10px;
+  padding: 4px;
+}
+
+.mode-tab {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: #9fb0c0;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 0;
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.mode-tab-active {
+  background: rgba(159, 240, 138, 0.16);
+  color: #f2f5f8;
+}
+
+/* --- Imposter mode: host config + role banner --- */
+
+.imp-host-config select {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  color: #f2f5f8;
+  padding: 6px 8px;
+  font-size: 13px;
+}
+
+.imp-config-readonly {
+  font-size: 13px;
+  color: #9fb0c0;
+  margin-bottom: 14px;
+  text-align: left;
+}
+
+.imp-role-banner {
+  position: fixed;
+  top: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 12;
+  background: rgba(20, 30, 44, 0.88);
+  border: 1px solid rgba(159, 240, 138, 0.4);
+  border-radius: 10px;
+  padding: 14px 26px;
+  text-align: center;
+  pointer-events: none;
+  transition: opacity 0.4s ease, transform 0.4s ease, padding 0.4s ease;
+}
+
+.imp-role-banner.imp-role-imposter {
+  border-color: rgba(255, 90, 80, 0.5);
+}
+
+.imp-role-text {
+  color: #f2f5f8;
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.imp-role-imposter .imp-role-text {
+  color: #ff8f85;
+}
+
+.imp-fellow-imposters {
+  color: #9fb0c0;
+  font-size: 13px;
+  margin-top: 4px;
+}
+
+/* Shrinks to a small persistent corner tag after the initial reveal, rather
+ * than disappearing entirely — imposters especially benefit from a
+ * standing reminder of who their fellow imposters are. */
+.imp-role-banner.imp-role-banner-small {
+  top: 12px;
+  left: auto;
+  right: 12px;
+  transform: none;
+  padding: 8px 14px;
+}
+
+.imp-role-banner.imp-role-banner-small .imp-role-text {
+  font-size: 13px;
+}

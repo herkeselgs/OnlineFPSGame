@@ -1,17 +1,24 @@
-import { RoomManager } from "./rooms/RoomManager.js";
+interface Tickable {
+  tick(nowMs: number): void;
+}
+
+interface RoomManagerLike {
+  allRooms(): Tickable[];
+}
 
 /**
- * Single global tick driving every active room, rather than one timer per
- * room — cheaper and keeps all rooms' simulation in lockstep. Uses a
- * self-correcting setTimeout schedule (track the intended next-tick time
- * and only wait the remaining delta) instead of a plain setInterval, so
- * small per-tick overhead doesn't accumulate into drift over a long match.
+ * Single global tick driving every active room across every mode's room
+ * manager, rather than one timer per room — cheaper and keeps all rooms'
+ * simulation in lockstep. Uses a self-correcting setTimeout schedule (track
+ * the intended next-tick time and only wait the remaining delta) instead of
+ * a plain setInterval, so small per-tick overhead doesn't accumulate into
+ * drift over a long match.
  */
 export class GameLoop {
   private timer: NodeJS.Timeout | null = null;
   private nextTickTime = 0;
 
-  constructor(private manager: RoomManager, private tickIntervalMs: number) {}
+  constructor(private managers: RoomManagerLike[], private tickIntervalMs: number) {}
 
   start(): void {
     this.nextTickTime = Date.now();
@@ -30,8 +37,10 @@ export class GameLoop {
 
   private runTick(): void {
     const now = Date.now();
-    for (const room of this.manager.allRooms()) {
-      room.tick(now);
+    for (const manager of this.managers) {
+      for (const room of manager.allRooms()) {
+        room.tick(now);
+      }
     }
 
     this.nextTickTime += this.tickIntervalMs;

@@ -8,5 +8,6 @@ export * from "./weaponState.js";
 export * from "./playerCombatState.js";
 export * from "./positionHistory.js";
 export * from "./protocol.js";
+export * from "./impostorProtocol.js";
 export * from "./cosmetics.js";
 export * from "./progression.js";

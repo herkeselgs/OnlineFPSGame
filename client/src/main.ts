@@ -2,8 +2,10 @@ import { DEFAULT_MAP_ID, MapDefinition, MAPS } from "@fps/shared";
 import * as THREE from "three";
 import { soundEngine } from "./audio/SoundEngine";
 import { InputManager } from "./engine/InputManager";
+import { ImpostorMatchController } from "./game/ImpostorMatchController";
 import { MatchController } from "./game/MatchController";
 import { PracticeMode } from "./game/PracticeMode";
+import { ImpostorFlow } from "./net/ImpostorFlow";
 import { MultiplayerFlow } from "./net/MultiplayerFlow";
 import { buildMapScene, BuiltMapScene } from "./render/SceneBuilder";
 import { settingsStore } from "./state/settings";
@@ -142,10 +144,35 @@ const multiplayer = new MultiplayerFlow(scene, camera, input, hud, loadMap, (mat
   if (match) lockOverlay.classList.add("hidden");
 });
 
+const impostorFlow = new ImpostorFlow(scene, camera, input, loadMap, (match: ImpostorMatchController | null) => {
+  stopPractice();
+  activeMode = match;
+  if (match) lockOverlay.classList.add("hidden");
+});
+
 new ProgressionUI(
   () => multiplayer.showMenu(),
   () => multiplayer.hideAllScreens()
 );
+
+// --- Main menu mode tabs (Duel <-> Imposter) ---
+const modeTabDuel = document.getElementById("mode-tab-duel") as HTMLButtonElement;
+const modeTabImpostor = document.getElementById("mode-tab-impostor") as HTMLButtonElement;
+const duelModePanel = document.getElementById("duel-mode-panel") as HTMLDivElement;
+const impostorModePanel = document.getElementById("impostor-mode-panel") as HTMLDivElement;
+
+modeTabDuel.addEventListener("click", () => {
+  modeTabDuel.classList.add("mode-tab-active");
+  modeTabImpostor.classList.remove("mode-tab-active");
+  duelModePanel.classList.remove("hidden");
+  impostorModePanel.classList.add("hidden");
+});
+modeTabImpostor.addEventListener("click", () => {
+  modeTabImpostor.classList.add("mode-tab-active");
+  modeTabDuel.classList.remove("mode-tab-active");
+  impostorModePanel.classList.remove("hidden");
+  duelModePanel.classList.add("hidden");
+});
 
 btnStart.addEventListener("click", () => {
   const mode = settingsStore.get().lookMode;
@@ -162,6 +189,8 @@ btnLeaveMatch.addEventListener("click", () => {
   if (activeMode === practice) {
     stopPractice();
     multiplayer.showMenu();
+  } else if (activeMode === impostorFlow.activeMatch) {
+    impostorFlow.leaveRoom();
   } else {
     multiplayer.leaveRoom();
   }
@@ -251,5 +280,6 @@ if (import.meta.env.DEV) {
     camera,
     scene,
     multiplayer,
+    impostorFlow,
   };
 }
