@@ -1119,3 +1119,116 @@ html, body {
 .imp-role-banner.imp-role-banner-small .imp-role-text {
   font-size: 13px;
 }
+
+/* --- Imposter mode: match result banner --- */
+
+.imp-match-result-banner {
+  position: fixed;
+  top: 40%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 21;
+  background: rgba(20, 30, 44, 0.92);
+  border: 1px solid rgba(159, 240, 138, 0.4);
+  border-radius: 12px;
+  padding: 22px 40px;
+  text-align: center;
+  pointer-events: none;
+  color: #f2f5f8;
+  font-size: 26px;
+  font-weight: 700;
+  text-shadow: 0 0 30px rgba(159, 240, 138, 0.4);
+}
+
+/* --- Imposter mode: task checklist + interact prompt --- */
+
+.imp-task-checklist {
+  position: fixed;
+  top: 90px;
+  left: 16px;
+  z-index: 11;
+  background: rgba(15, 22, 32, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  padding: 10px 14px;
+  min-width: 190px;
+  pointer-events: none;
+}
+
+.imp-task-row {
+  font-size: 13px;
+  color: #f2f5f8;
+  padding: 3px 0;
+  white-space: nowrap;
+}
+
+.imp-task-row.imp-task-done {
+  color: #7de08a;
+  text-decoration: line-through;
+  opacity: 0.7;
+}
+
+.imp-task-prompt {
+  position: fixed;
+  bottom: 130px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 11;
+  background: rgba(15, 22, 32, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 10px;
+  padding: 10px 18px;
+  text-align: center;
+  pointer-events: none;
+}
+
+.imp-task-prompt-text {
+  color: #f2f5f8;
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.imp-task-progress-bar {
+  width: 160px;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.imp-task-progress-fill {
+  height: 100%;
+  width: 0%;
+  background: #7de08a;
+  transition: width 0.05s linear;
+}
+
+.imp-task-sequence {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+}
+
+.imp-seq-key {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #9fb0c0;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.imp-seq-key-done {
+  background: rgba(125, 224, 138, 0.25);
+  color: #7de08a;
+}
+
+.imp-seq-key-next {
+  background: rgba(242, 193, 78, 0.3);
+  color: #f2c14e;
+}

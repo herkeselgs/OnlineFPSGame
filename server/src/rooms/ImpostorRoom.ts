@@ -1,5 +1,6 @@
 import {
   defaultImpostorConfig,
+  DEFAULT_IMPOSTOR_MAP_ID,
   ImpostorClientMessage,
   ImpostorPhase,
   ImpostorPlayerSnapshot,
@@ -7,30 +8,28 @@ import {
   ImpostorRole,
   ImpostorRoomConfig,
   ImpostorServerMessage,
+  IMPOSTOR_MAPS,
   IMPOSTOR_MAX_PLAYERS,
   IMPOSTOR_MIN_PLAYERS,
   isValidImposterCount,
-  MAPS,
   MATCH_COUNTDOWN_MS,
   PlayerId,
   RECONNECT_GRACE_MS,
+  RESULTS_DISPLAY_MS,
+  SequenceKey,
+  SEQUENCE_KEYS,
   SIM_HZ,
   SNAPSHOT_HZ,
   stepPlayerMovement,
+  TaskStationDef,
+  TaskStationState,
+  TASK_STATIONS,
 } from "@fps/shared";
 import { randomUUID } from "node:crypto";
 import { WebSocket } from "ws";
 import { createImpostorPlayerSession, ImpostorPlayerSession } from "./ImpostorPlayerSession.js";
 
 const SNAPSHOT_EVERY_N_TICKS = Math.round(SIM_HZ / SNAPSHOT_HZ);
-
-// Placeholder map until Milestone 2 builds a dedicated task map sized for
-// 4-10 roaming players — Outpost is reused as-is purely so this milestone
-// has somewhere to walk around and prove role assignment/movement. Only 2
-// spawn points, so with more than 2 players some will spawn stacked; that's
-// an accepted temporary wrinkle, not something worth solving before the
-// real map exists.
-const PLACEHOLDER_MAP_ID = "outpost";
 
 /**
  * Sibling to Duel's Room, not a subclass or a generalized merge — the phase
@@ -44,7 +43,7 @@ const PLACEHOLDER_MAP_ID = "outpost";
 export class ImpostorRoom {
   readonly code: string;
   phase: ImpostorPhase = "lobby";
-  private readonly mapId: string = PLACEHOLDER_MAP_ID;
+  private readonly mapId: string = DEFAULT_IMPOSTOR_MAP_ID;
   private config: ImpostorRoomConfig = defaultImpostorConfig();
   private hostId: PlayerId | null = null;
 
@@ -53,6 +52,9 @@ export class ImpostorRoom {
   private countdownEndsAt = 0;
   private tickCount = 0;
   private ticksSinceSnapshot = 0;
+
+  private readonly taskStations: readonly TaskStationDef[] = TASK_STATIONS;
+  private completedStations = new Set<string>();
 
   private pauseStartedAt: number | null = null;
   private disconnectTimers = new Map<PlayerId, ReturnType<typeof setTimeout>>();
@@ -66,7 +68,7 @@ export class ImpostorRoom {
   }
 
   private get map() {
-    return MAPS[this.mapId];
+    return IMPOSTOR_MAPS[this.mapId];
   }
 
   addPlayer(ws: WebSocket, name: string, color: number): PlayerId | { error: string } {
@@ -126,6 +128,14 @@ export class ImpostorRoom {
       }
 
       if (this.pauseStartedAt !== null && [...this.players.values()].every((p) => p.connected)) {
+        const pausedMs = Date.now() - this.pauseStartedAt;
+        // A hold task's progress is measured from a wall-clock startedAt —
+        // shift it forward by however long the room was frozen so the
+        // paused time doesn't silently count toward "held continuously",
+        // same reasoning as Duel's respawn/match-clock shifts on resume.
+        for (const p of this.players.values()) {
+          if (p.activeHold) p.activeHold.startedAt += pausedMs;
+        }
         this.pauseStartedAt = null;
       }
 
@@ -147,6 +157,8 @@ export class ImpostorRoom {
       this.send(id, { type: "imp_match_started", serverTime: Date.now(), mapId: this.mapId });
       const role = this.roles.get(id);
       if (role) this.send(id, { type: "imp_role_assigned", role, fellowImposters: this.fellowImpostersFor(id, role) });
+      this.send(id, { type: "imp_task_stations", stations: [...this.taskStations] });
+      this.send(id, { type: "imp_task_progress", stations: this.taskStateList() });
     }
   }
 
@@ -202,6 +214,12 @@ export class ImpostorRoom {
       case "leave_room":
         this.removePlayer(id);
         break;
+      case "imp_task_hold":
+        if (this.phase === "active" && this.pauseStartedAt === null) this.handleTaskHold(session, msg.stationId, msg.holding);
+        break;
+      case "imp_task_key":
+        if (this.phase === "active" && this.pauseStartedAt === null) this.handleTaskKey(session, msg.stationId, msg.key);
+        break;
     }
   }
 
@@ -244,18 +262,23 @@ export class ImpostorRoom {
   private startMatch(nowMs: number): void {
     this.phase = "active";
     this.assignRoles();
+    this.completedStations.clear();
 
     let spawnIndex = 0;
     for (const session of this.players.values()) {
       this.assignSpawn(session, spawnIndex++);
       session.history.clear();
       session.inputQueue.length = 0;
+      session.activeHold = null;
+      session.activeSequence = null;
     }
 
     this.broadcast({ type: "imp_match_started", serverTime: nowMs, mapId: this.mapId });
     for (const [id, role] of this.roles) {
       this.send(id, { type: "imp_role_assigned", role, fellowImposters: this.fellowImpostersFor(id, role) });
     }
+    this.broadcast({ type: "imp_task_stations", stations: [...this.taskStations] });
+    this.broadcast({ type: "imp_task_progress", stations: this.taskStateList() });
   }
 
   /** Fisher-Yates shuffle of the roster, first config.imposterCount become
@@ -276,10 +299,10 @@ export class ImpostorRoom {
     return [...this.roles.entries()].filter(([otherId, r]) => r === "imposter" && otherId !== id).map(([otherId]) => otherId);
   }
 
-  /** Cycles through the placeholder map's spawns via modulo — with more
-   * than `spawns.length` players, some spawn stacked. Accepted for this
-   * milestone (see PLACEHOLDER_MAP_ID's comment); not worth a
-   * spawn-scattering hack for a map that's getting replaced next milestone. */
+  /** Cycles through the map's spawns via modulo — Facility has 10, matching
+   * IMPOSTOR_MAX_PLAYERS, so this only wraps if the host's config somehow
+   * allowed more (it can't; isValidImposterCount/applyConfig cap maxPlayers
+   * at IMPOSTOR_MAX_PLAYERS too). */
   private assignSpawn(session: ImpostorPlayerSession, spawnIndex: number): void {
     const spawn = this.map.spawns[spawnIndex % this.map.spawns.length];
     session.physics = { position: { ...spawn.position }, velocity: { x: 0, y: 0, z: 0 }, onGround: false };
@@ -291,6 +314,113 @@ export class ImpostorRoom {
     for (const session of this.players.values()) {
       this.drainInputs(session, nowMs);
     }
+    this.checkActiveTasks(nowMs);
+  }
+
+  /** Task progress is time-based (holds) or requires staying put (sequences),
+   * not purely edge-triggered, so it needs a check every tick regardless of
+   * whether new input arrived this tick — both to advance/complete a hold
+   * that's been held long enough, and to catch a player who walked out of
+   * range without ever sending a release (e.g. they let go of W but kept
+   * holding E while drifting on residual velocity — still needs to cancel
+   * once they're actually out of range, not just on the next explicit
+   * interact message). */
+  private checkActiveTasks(nowMs: number): void {
+    for (const session of this.players.values()) {
+      const hold = session.activeHold;
+      if (hold) {
+        const station = this.taskStations.find((s) => s.id === hold.stationId);
+        if (!station || this.completedStations.has(station.id) || !this.withinRange(session, station)) {
+          session.activeHold = null;
+        } else if (nowMs - hold.startedAt >= station.holdDurationMs) {
+          session.activeHold = null;
+          this.completeTask(station.id);
+        }
+      }
+
+      const seq = session.activeSequence;
+      if (seq) {
+        const station = this.taskStations.find((s) => s.id === seq.stationId);
+        if (!station || this.completedStations.has(station.id) || !this.withinRange(session, station)) {
+          session.activeSequence = null;
+          this.send(session.id, { type: "imp_task_sequence_cancelled", stationId: seq.stationId });
+        }
+      }
+    }
+  }
+
+  private withinRange(session: ImpostorPlayerSession, station: TaskStationDef): boolean {
+    const dx = session.physics.position.x - station.position.x;
+    const dz = session.physics.position.z - station.position.z;
+    return Math.hypot(dx, dz) <= station.radius;
+  }
+
+  private handleTaskHold(session: ImpostorPlayerSession, stationId: string, holding: boolean): void {
+    if (this.roles.get(session.id) !== "crewmate") return;
+    const station = this.taskStations.find((s) => s.id === stationId);
+    if (!station || this.completedStations.has(stationId)) return;
+
+    if (!holding) {
+      if (session.activeHold?.stationId === stationId) session.activeHold = null;
+      return;
+    }
+    if (!this.withinRange(session, station)) return;
+
+    if (station.kind === "hold") {
+      session.activeHold = { stationId, startedAt: Date.now() };
+    } else if (station.kind === "sequence" && !session.activeSequence) {
+      const sequence = randomSequence(station.sequenceLength);
+      session.activeSequence = { stationId, sequence, progress: 0 };
+      this.send(session.id, { type: "imp_task_sequence", stationId, sequence });
+    }
+  }
+
+  private handleTaskKey(session: ImpostorPlayerSession, stationId: string, key: string): void {
+    if (this.roles.get(session.id) !== "crewmate") return;
+    const seq = session.activeSequence;
+    if (!seq || seq.stationId !== stationId) return;
+    const station = this.taskStations.find((s) => s.id === stationId);
+    if (!station || this.completedStations.has(stationId)) return;
+
+    if (key === seq.sequence[seq.progress]) {
+      seq.progress++;
+      if (seq.progress >= seq.sequence.length) {
+        session.activeSequence = null;
+        this.completeTask(stationId);
+        return;
+      }
+      this.send(session.id, { type: "imp_task_sequence_progress", stationId, correctCount: seq.progress });
+    } else {
+      seq.progress = 0;
+      this.send(session.id, { type: "imp_task_sequence_progress", stationId, correctCount: 0 });
+    }
+  }
+
+  private completeTask(stationId: string): void {
+    if (this.completedStations.has(stationId)) return;
+    this.completedStations.add(stationId);
+
+    // Anyone else mid-attempt on the same station (a race between two
+    // crewmates reaching it around the same time) has their attempt
+    // invalidated now that it's already done.
+    for (const session of this.players.values()) {
+      if (session.activeHold?.stationId === stationId) session.activeHold = null;
+      if (session.activeSequence?.stationId === stationId) {
+        session.activeSequence = null;
+        this.send(session.id, { type: "imp_task_sequence_cancelled", stationId });
+      }
+    }
+
+    this.broadcast({ type: "imp_task_progress", stations: this.taskStateList() });
+
+    if (this.completedStations.size >= this.taskStations.length) {
+      this.broadcast({ type: "imp_match_ended", reason: "tasks_complete" });
+      setTimeout(() => this.resetToLobby(), RESULTS_DISPLAY_MS);
+    }
+  }
+
+  private taskStateList(): TaskStationState[] {
+    return this.taskStations.map((s) => ({ id: s.id, completed: this.completedStations.has(s.id) }));
   }
 
   private drainInputs(session: ImpostorPlayerSession, nowMs: number): void {
@@ -314,9 +444,15 @@ export class ImpostorRoom {
 
   private resetToLobby(): void {
     this.pauseStartedAt = null;
+    if (this.players.size === 0) return; // room emptied while results were showing
     this.phase = "lobby";
     this.roles.clear();
-    for (const p of this.players.values()) p.ready = false;
+    this.completedStations.clear();
+    for (const p of this.players.values()) {
+      p.ready = false;
+      p.activeHold = null;
+      p.activeSequence = null;
+    }
     this.broadcastLobby();
   }
 
@@ -366,4 +502,12 @@ export class ImpostorRoom {
       if (session.ws.readyState === WebSocket.OPEN) session.ws.send(JSON.stringify(msg));
     }
   }
+}
+
+function randomSequence(length: number): SequenceKey[] {
+  const out: SequenceKey[] = [];
+  for (let i = 0; i < length; i++) {
+    out.push(SEQUENCE_KEYS[Math.floor(Math.random() * SEQUENCE_KEYS.length)]);
+  }
+  return out;
 }

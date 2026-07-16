@@ -93,6 +93,13 @@ export class InputManager {
     return true;
   }
 
+  /** Raw held-state check, unlike consumeJustPressed's edge-triggered
+   * one-shot — for continuous "am I holding this key right now" reads
+   * (e.g. Imposter mode's hold-to-complete tasks). */
+  isKeyDown(code: string): boolean {
+    return this.keys.has(code);
+  }
+
   getMoveAxes(): { forward: number; right: number; jump: boolean } {
     let forward = 0;
     let right = 0;

@@ -1,15 +1,16 @@
 import {
   colorForCosmetic,
   defaultImpostorConfig,
+  DEFAULT_IMPOSTOR_MAP_ID,
   ImpostorPhase,
   ImpostorPlayerSummary,
   ImpostorRole,
   ImpostorRoomConfig,
   ImpostorServerMessage,
+  IMPOSTOR_MAPS,
   IMPOSTOR_MAX_IMPOSTERS,
   IMPOSTOR_MAX_PLAYERS,
   IMPOSTOR_MIN_PLAYERS,
-  MAPS,
   MapDefinition,
   PlayerId,
   suggestImposterCount,
@@ -18,6 +19,7 @@ import * as THREE from "three";
 import { soundEngine } from "../audio/SoundEngine";
 import { InputManager } from "../engine/InputManager";
 import { ImpostorMatchController } from "../game/ImpostorMatchController";
+import { ImpostorTaskHud } from "../game/ImpostorTaskHud";
 import { profileStore } from "../state/profile";
 import { NetClient } from "./NetClient";
 
@@ -34,10 +36,6 @@ function resolveWsUrl(): string {
 function randomDefaultName(): string {
   return `Player${Math.floor(1000 + Math.random() * 9000)}`;
 }
-
-// Placeholder until the M2 task map exists — matches ImpostorRoom's server-side
-// placeholder so the client renders the same map it's actually simulated on.
-const PLACEHOLDER_MAP_ID = "outpost";
 
 const IMPOSTOR_RECONNECT_SESSION_KEY = "fps-impostor-reconnect";
 
@@ -107,6 +105,9 @@ export class ImpostorFlow {
   private roleBanner = el("imp-role-banner");
   private roleText = el("imp-role-text");
   private fellowImpostersEl = el("imp-fellow-imposters");
+  private matchResultBanner = el("imp-match-result-banner");
+  private matchResultText = el("imp-match-result-text");
+  private taskHud = new ImpostorTaskHud();
 
   private ready = false;
   private lobbyPhase: ImpostorPhase = "lobby";
@@ -245,6 +246,7 @@ export class ImpostorFlow {
           this.match = null;
           this.onMatchActiveChange(null);
           this.hideRoleBanner();
+          this.hideMatchResultBanner();
           this.showLobby();
         }
         this.renderLobby(msg.players);
@@ -354,7 +356,7 @@ export class ImpostorFlow {
     this.hideAllScreens();
     this.lockOverlay.classList.remove("hidden");
     if (this.match) this.match.dispose();
-    const resolvedMapId = MAPS[mapId] ? mapId : PLACEHOLDER_MAP_ID;
+    const resolvedMapId = IMPOSTOR_MAPS[mapId] ? mapId : DEFAULT_IMPOSTOR_MAP_ID;
     // meshes (Duel uses these for hitscan raycasting) are unused here — this
     // mode has no shooting yet, loadMap's side effect of building the scene
     // geometry is all that's needed.
@@ -367,12 +369,23 @@ export class ImpostorFlow {
       this.net,
       this.selfId as PlayerId,
       this.playerNames,
+      this.taskHud,
       spawn,
       map.blocks,
       map.ladders,
-      (role, fellowNames) => this.showRoleBanner(role, fellowNames)
+      (role, fellowNames) => this.showRoleBanner(role, fellowNames),
+      () => this.showMatchResult("Crewmates Win — All Tasks Complete!")
     );
     this.onMatchActiveChange(this.match);
+  }
+
+  private showMatchResult(text: string): void {
+    this.matchResultText.textContent = text;
+    this.matchResultBanner.classList.remove("hidden");
+  }
+
+  private hideMatchResultBanner(): void {
+    this.matchResultBanner.classList.add("hidden");
   }
 
   private showRoleBanner(role: ImpostorRole, fellowImposterNames: string[]): void {
@@ -410,6 +423,7 @@ export class ImpostorFlow {
       this.onMatchActiveChange(null);
     }
     this.hideRoleBanner();
+    this.hideMatchResultBanner();
     this.selfId = null;
     this.roomCode = null;
     this.playerNames.clear();

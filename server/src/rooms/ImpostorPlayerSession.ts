@@ -1,6 +1,24 @@
-import { ClientInputMessage, LAG_COMP_HISTORY_MS, PlayerId, PlayerPhysicsState, PositionHistory } from "@fps/shared";
+import {
+  ClientInputMessage,
+  LAG_COMP_HISTORY_MS,
+  PlayerId,
+  PlayerPhysicsState,
+  PositionHistory,
+  SequenceKey,
+} from "@fps/shared";
 import { randomUUID } from "node:crypto";
 import { WebSocket } from "ws";
+
+export interface ActiveHold {
+  stationId: string;
+  startedAt: number;
+}
+
+export interface ActiveSequence {
+  stationId: string;
+  sequence: SequenceKey[];
+  progress: number;
+}
 
 /**
  * Per-player state for an ImpostorRoom. Deliberately lighter than Duel's
@@ -30,6 +48,9 @@ export interface ImpostorPlayerSession {
    * from the start so M4's kill mechanic doesn't need to retrofit history
    * tracking into every session that's already been ticking. */
   history: PositionHistory;
+
+  activeHold: ActiveHold | null;
+  activeSequence: ActiveSequence | null;
 }
 
 export function createImpostorPlayerSession(id: PlayerId, ws: WebSocket, name: string, color: number): ImpostorPlayerSession {
@@ -48,5 +69,7 @@ export function createImpostorPlayerSession(id: PlayerId, ws: WebSocket, name: s
     lastProcessedSeq: 0,
     lastRttMs: 0,
     history: new PositionHistory(LAG_COMP_HISTORY_MS),
+    activeHold: null,
+    activeSequence: null,
   };
 }

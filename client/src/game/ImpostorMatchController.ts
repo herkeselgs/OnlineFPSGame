@@ -5,7 +5,9 @@ import {
   ImpostorServerMessage,
   INTERP_DELAY_MS,
   PlayerId,
+  SequenceKey,
   SpawnPoint,
+  TaskStationDef,
 } from "@fps/shared";
 import * as THREE from "three";
 import { ClockSync } from "../net/ClockSync";
@@ -13,14 +15,20 @@ import { InputManager } from "../engine/InputManager";
 import { NetClient } from "../net/NetClient";
 import { ImpostorPredictionController } from "./ImpostorPredictionController";
 import { ImpostorRemotePlayer } from "./ImpostorRemotePlayer";
+import { ImpostorTaskHud } from "./ImpostorTaskHud";
 
 const PING_INTERVAL_MS = 2000;
+const INTERACT_KEY = "KeyE";
+const STATION_MARKER_COLOR = 0xf2c14e;
+const STATION_MARKER_DONE_COLOR = 0x4caf6a;
 
 /**
- * Sibling to Duel's MatchController, scoped to Milestone 1: local movement
- * prediction + interpolated remote players + role reveal. No tasks,
- * meetings, or kill mechanic yet — those are separate milestones layered on
- * top of this same controller as the mode grows, not a rewrite of it.
+ * Sibling to Duel's MatchController. Milestone 1 covered local movement
+ * prediction + interpolated remote players + role reveal; this milestone
+ * (2) layers task interaction on top of that same controller — proximity
+ * detection, hold/sequence task messages, station markers in the world, and
+ * the crewmate all-tasks-complete win condition. Still no meetings or the
+ * imposter kill mechanic (M3/M4).
  */
 export class ImpostorMatchController {
   readonly prediction: ImpostorPredictionController;
@@ -32,6 +40,28 @@ export class ImpostorMatchController {
   private pingTimer: ReturnType<typeof setInterval>;
   private role: ImpostorRole | null = null;
   private onRoleAssigned: (role: ImpostorRole, fellowImposterNames: string[]) => void;
+  private onMatchEnded: () => void;
+
+  private input: InputManager;
+  private taskHud: ImpostorTaskHud;
+  private stations: TaskStationDef[] = [];
+  private completedStationIds = new Set<string>();
+  private stationMarkers = new Map<string, THREE.Mesh>();
+
+  // Local (client-only) interact-key edge tracking — InputManager only
+  // exposes edge-triggered "just pressed" for one-shot actions and raw
+  // isKeyDown for continuous state; a hold task needs to know the PRESS and
+  // RELEASE edges itself so it sends exactly one imp_task_hold per
+  // transition, not one every frame (which would keep resetting the
+  // server's hold timer — see ImpostorRoom.handleTaskHold).
+  private wasHoldingInteract = false;
+  private holdingStationId: string | null = null;
+  private holdStartedAtLocal = 0;
+
+  private activeSequenceStationId: string | null = null;
+  private activeSequenceKeys: SequenceKey[] = [];
+  private activeSequenceProgress = 0;
+  private static readonly SEQUENCE_KEY_CODES = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"] as const;
 
   constructor(
     private scene: THREE.Scene,
@@ -40,18 +70,24 @@ export class ImpostorMatchController {
     private net: NetClient,
     private selfId: PlayerId,
     playerNames: Map<PlayerId, string>,
+    taskHud: ImpostorTaskHud,
     spawn: SpawnPoint,
     colliders: readonly BoxCollider[],
     ladders: readonly BoxCollider[],
-    onRoleAssigned: (role: ImpostorRole, fellowImposterNames: string[]) => void
+    onRoleAssigned: (role: ImpostorRole, fellowImposterNames: string[]) => void,
+    onMatchEnded: () => void
   ) {
     this.playerNames = playerNames;
+    this.input = input;
+    this.taskHud = taskHud;
     this.onRoleAssigned = onRoleAssigned;
+    this.onMatchEnded = onMatchEnded;
     this.prediction = new ImpostorPredictionController(spawn, colliders, input, net, camera, ladders);
 
     this.unsubscribe = net.onMessage((msg) => this.handleMessage(msg as ImpostorServerMessage));
     this.pingTimer = setInterval(() => net.send({ type: "ping", t: Date.now() }), PING_INTERVAL_MS);
     net.send({ type: "ping", t: Date.now() });
+    this.taskHud.show();
   }
 
   update(frameDt: number): void {
@@ -59,6 +95,8 @@ export class ImpostorMatchController {
 
     const renderTime = this.clock.estimateServerTime() - INTERP_DELAY_MS;
     for (const rp of this.remotePlayersMap.values()) rp.update(renderTime);
+
+    if (this.role === "crewmate") this.updateTaskInteraction();
   }
 
   getShakeOffset(): { yaw: number; pitch: number; roll: number } {
@@ -78,6 +116,9 @@ export class ImpostorMatchController {
     clearInterval(this.pingTimer);
     for (const rp of this.remotePlayersMap.values()) rp.dispose(this.scene);
     this.remotePlayersMap.clear();
+    for (const marker of this.stationMarkers.values()) this.disposeMarker(marker);
+    this.stationMarkers.clear();
+    this.taskHud.hide();
   }
 
   private handleMessage(msg: ImpostorServerMessage): void {
@@ -99,6 +140,30 @@ export class ImpostorMatchController {
           msg.fellowImposters.map((id) => this.playerNames.get(id) ?? "Player")
         );
         break;
+      case "imp_task_stations":
+        this.stations = msg.stations;
+        this.taskHud.setStations(msg.stations);
+        this.buildStationMarkers();
+        break;
+      case "imp_task_progress":
+        this.completedStationIds = new Set(msg.stations.filter((s) => s.completed).map((s) => s.id));
+        this.taskHud.setProgress(msg.stations);
+        this.refreshMarkerColors();
+        break;
+      case "imp_task_sequence":
+        this.activeSequenceStationId = msg.stationId;
+        this.activeSequenceKeys = msg.sequence;
+        this.activeSequenceProgress = 0;
+        break;
+      case "imp_task_sequence_progress":
+        if (this.activeSequenceStationId === msg.stationId) this.activeSequenceProgress = msg.correctCount;
+        break;
+      case "imp_task_sequence_cancelled":
+        if (this.activeSequenceStationId === msg.stationId) this.clearActiveSequence();
+        break;
+      case "imp_match_ended":
+        this.onMatchEnded();
+        break;
       default:
         break;
     }
@@ -117,5 +182,120 @@ export class ImpostorMatchController {
       }
       rp.ingestSnapshot(p.position, p.yaw, serverTimeMs, p.color);
     }
+  }
+
+  private buildStationMarkers(): void {
+    for (const marker of this.stationMarkers.values()) this.disposeMarker(marker);
+    this.stationMarkers.clear();
+    for (const station of this.stations) {
+      const geometry = new THREE.CylinderGeometry(0.4, 0.4, 1.2, 10);
+      const material = new THREE.MeshLambertMaterial({ color: STATION_MARKER_COLOR });
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.position.set(station.position.x, station.position.y, station.position.z);
+      this.scene.add(mesh);
+      this.stationMarkers.set(station.id, mesh);
+    }
+    this.refreshMarkerColors();
+  }
+
+  private refreshMarkerColors(): void {
+    for (const [id, mesh] of this.stationMarkers) {
+      const material = mesh.material as THREE.MeshLambertMaterial;
+      material.color.setHex(this.completedStationIds.has(id) ? STATION_MARKER_DONE_COLOR : STATION_MARKER_COLOR);
+    }
+  }
+
+  private disposeMarker(mesh: THREE.Mesh): void {
+    this.scene.remove(mesh);
+    mesh.geometry.dispose();
+    (mesh.material as THREE.Material).dispose();
+  }
+
+  /** Proximity-based UI + interact-key handling. All server-facing sends
+   * here are requests, not authoritative state — ImpostorRoom independently
+   * validates range, role, and station kind before acting on any of them. */
+  private updateTaskInteraction(): void {
+    if (this.activeSequenceStationId) {
+      this.updateActiveSequence();
+      return;
+    }
+
+    const nearest = this.findNearestIncompleteStation();
+    const holdingKeyNow = this.input.isKeyDown(INTERACT_KEY);
+    const pressedEdge = holdingKeyNow && !this.wasHoldingInteract;
+    const releasedEdge = !holdingKeyNow && this.wasHoldingInteract;
+    this.wasHoldingInteract = holdingKeyNow;
+
+    if (!nearest) {
+      this.taskHud.hidePrompt();
+      if (this.holdingStationId) this.releaseHold();
+      return;
+    }
+
+    if (nearest.kind === "hold") {
+      if (pressedEdge) {
+        this.holdingStationId = nearest.id;
+        this.holdStartedAtLocal = Date.now();
+        this.net.send({ type: "imp_task_hold", stationId: nearest.id, holding: true });
+      } else if (releasedEdge && this.holdingStationId === nearest.id) {
+        this.releaseHold();
+      }
+
+      if (this.holdingStationId === nearest.id) {
+        const progress = (Date.now() - this.holdStartedAtLocal) / nearest.holdDurationMs;
+        this.taskHud.showHoldPrompt(nearest.name, progress);
+      } else {
+        this.taskHud.showHoldPrompt(nearest.name, 0);
+      }
+    } else {
+      if (this.holdingStationId) this.releaseHold();
+      if (pressedEdge) {
+        this.net.send({ type: "imp_task_hold", stationId: nearest.id, holding: true });
+      }
+      this.taskHud.showStartPrompt(nearest.name);
+    }
+  }
+
+  private updateActiveSequence(): void {
+    const stationId = this.activeSequenceStationId;
+    if (!stationId) return;
+    const station = this.stations.find((s) => s.id === stationId);
+    for (const key of ImpostorMatchController.SEQUENCE_KEY_CODES) {
+      if (this.input.consumeJustPressed(key)) {
+        this.net.send({ type: "imp_task_key", stationId, key });
+      }
+    }
+    this.taskHud.showSequence(station?.name ?? "", this.activeSequenceKeys, this.activeSequenceProgress);
+  }
+
+  private clearActiveSequence(): void {
+    this.activeSequenceStationId = null;
+    this.activeSequenceKeys = [];
+    this.activeSequenceProgress = 0;
+    this.taskHud.hidePrompt();
+  }
+
+  private releaseHold(): void {
+    if (this.holdingStationId) {
+      this.net.send({ type: "imp_task_hold", stationId: this.holdingStationId, holding: false });
+    }
+    this.holdingStationId = null;
+  }
+
+  private findNearestIncompleteStation(): TaskStationDef | null {
+    const pos = this.prediction.physics.position;
+    let best: TaskStationDef | null = null;
+    let bestDist = Infinity;
+    for (const station of this.stations) {
+      if (this.completedStationIds.has(station.id)) continue;
+      const dx = pos.x - station.position.x;
+      const dz = pos.z - station.position.z;
+      const dist = Math.hypot(dx, dz);
+      if (dist <= station.radius && dist < bestDist) {
+        best = station;
+        bestDist = dist;
+      }
+    }
+    return best;
   }
 }

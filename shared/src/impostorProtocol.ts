@@ -1,3 +1,4 @@
+import { SequenceKey, TaskStationDef, TaskStationState } from "./impostorTasks.js";
 import { ClientInputMessage, PlayerId } from "./protocol.js";
 import { Vec3 } from "./vec.js";
 
@@ -103,6 +104,14 @@ export type ImpostorClientMessage =
   | { type: "leave_room" }
   | { type: "ping"; t: number }
   | { type: "rejoin_room"; code: string; token: string }
+  /** Press/release of the interact key near a station. For "hold" stations
+   * this directly drives progress (see imp_task_progress). For "sequence"
+   * stations, holding:true is "start an attempt" — release has no meaning
+   * there and is ignored server-side. Server-validated: ignored unless the
+   * sender is a crewmate, in range, and the station isn't already done. */
+  | { type: "imp_task_hold"; stationId: string; holding: boolean }
+  /** One keypress during an active sequence attempt at stationId. */
+  | { type: "imp_task_key"; stationId: string; key: string }
   | ClientInputMessage;
 
 export type ImpostorServerMessage =
@@ -125,5 +134,23 @@ export type ImpostorServerMessage =
    * OTHER imposters' ids so their client can identify them. */
   | { type: "imp_role_assigned"; role: ImpostorRole; fellowImposters: PlayerId[] }
   | { type: "imp_snapshot"; tick: number; serverTime: number; players: ImpostorPlayerSnapshot[] }
+  /** Sent once at match start — station locations/kinds are visible to
+   * everyone (imposters included, same as task icons being visible in
+   * Among Us), only the ability to interact is crewmate-only. */
+  | { type: "imp_task_stations"; stations: TaskStationDef[] }
+  /** Broadcast whenever any station's completed flag changes; carries the
+   * full list rather than a diff since it's at most a handful of entries. */
+  | { type: "imp_task_progress"; stations: TaskStationState[] }
+  /** Sent privately to the player who just began a sequence attempt. */
+  | { type: "imp_task_sequence"; stationId: string; sequence: SequenceKey[] }
+  /** Sent privately after each keypress during a sequence attempt —
+   * correctCount is how many of the sequence's keys have been correctly
+   * pressed in a row so far (reset to 0 on a wrong key, not an instant
+   * fail — these are meant to be quick, low-stakes interactions). */
+  | { type: "imp_task_sequence_progress"; stationId: string; correctCount: number }
+  /** Sent privately if an in-progress sequence attempt is cancelled
+   * (walked out of range, station completed by someone else meanwhile). */
+  | { type: "imp_task_sequence_cancelled"; stationId: string }
+  | { type: "imp_match_ended"; reason: "tasks_complete" }
   | { type: "imp_player_left"; id: PlayerId }
   | { type: "pong"; t: number; serverTime: number };

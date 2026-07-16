@@ -1,4 +1,4 @@
-import { DEFAULT_MAP_ID, MapDefinition, MAPS } from "@fps/shared";
+import { DEFAULT_MAP_ID, IMPOSTOR_MAPS, MapDefinition, MAPS } from "@fps/shared";
 import * as THREE from "three";
 import { soundEngine } from "./audio/SoundEngine";
 import { InputManager } from "./engine/InputManager";
@@ -93,8 +93,12 @@ camera.rotation.order = "YXZ";
 // match may use a different map, so nothing is built once-and-reused here.
 let currentBuilt: BuiltMapScene | null = null;
 
+// Checks both mode's map registries (Duel's MAPS and Imposter's IMPOSTOR_MAPS)
+// rather than a single one — this function is shared by both flow classes,
+// each of which only ever passes an id from its own mode's registry, so the
+// combined lookup never causes cross-mode ambiguity in practice.
 function loadMap(mapId: string): { map: MapDefinition; meshes: THREE.Mesh[] } {
-  const map = MAPS[mapId] ?? MAPS[DEFAULT_MAP_ID];
+  const map = MAPS[mapId] ?? IMPOSTOR_MAPS[mapId] ?? MAPS[DEFAULT_MAP_ID];
   if (currentBuilt) currentBuilt.dispose();
   currentBuilt = buildMapScene(scene, map);
   return { map, meshes: currentBuilt.meshes };
