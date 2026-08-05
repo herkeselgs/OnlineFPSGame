@@ -67,6 +67,22 @@ export const HEAD_BAND_MAX_Y = PLAYER_HALF_EXTENTS.y; // top of the head box (ma
  * hit — still requires consecutive precision, not a coinflip. */
 export const HEADSHOT_DAMAGE_MULTIPLIER = 2;
 
+// --- Limb (arms/legs) hitbox ---
+// The torso box used to run the full body's height (feet to HEAD_BAND_MIN_Y);
+// it now stops at LEG_BAND_MAX_Y, with a separate leg box filling the rest of
+// the way down — same "disjoint boxes stacked in Y" reasoning as the
+// head/torso split above. Arms get their own boxes too, flanking the torso
+// on either side rather than stacked in Y (a held-forward arm is beside the
+// torso, not above or below it).
+export const LEG_BAND_MAX_Y = -0.15; // hip line; below this is legs, at/above (up to HEAD_BAND_MIN_Y) is torso/arms
+export const ARM_ZONE_HALF_WIDTH = 0.2; // x half-extent of each arm box
+/** Limb hits (arms/legs) deal reduced damage relative to the torso baseline
+ * — a real hit, just not center-mass. Headshot is 2x baseline; this is
+ * 0.7x, so trading a body shot for a limb shot is never advantageous, but a
+ * limb hit still meaningfully counts (rifle: ~5 limb hits to kill vs 3 body,
+ * not a near-miss that may as well have not landed). */
+export const LIMB_DAMAGE_MULTIPLIER = 0.7;
+
 /** How long a disconnected player has to reconnect to their in-progress
  * match before it's scored as a forfeit. The match pauses (simulation and
  * timers frozen) for the whole window rather than continuing without them —

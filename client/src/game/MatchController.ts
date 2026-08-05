@@ -152,7 +152,7 @@ export class MatchController {
         this.hud.showDamageDirection(this.relativeAngleTo(msg.attackerPosition));
         break;
       case "kill_feed":
-        this.pushKillFeed(msg.killerId, msg.victimId, msg.headshot);
+        this.pushKillFeed(msg.killerId, msg.victimId, msg.headshot, msg.limbShot);
         break;
       default:
         break;
@@ -169,7 +169,7 @@ export class MatchController {
       if (!rp) {
         rp = new RemotePlayer(this.scene, p.id, this.playerNames.get(p.id) ?? "Player");
         this.remotePlayersMap.set(p.id, rp);
-        this.raycastables.push(rp.mesh, rp.headMesh);
+        this.raycastables.push(...rp.raycastMeshes);
       }
       rp.ingestSnapshot(
         p.position,
@@ -211,9 +211,9 @@ export class MatchController {
     [5, "is unstoppable"],
   ];
 
-  private pushKillFeed(killerId: PlayerId | null, victimId: PlayerId, headshot: boolean): void {
+  private pushKillFeed(killerId: PlayerId | null, victimId: PlayerId, headshot: boolean, limbShot: boolean): void {
     const name = (id: PlayerId) => (id === this.selfId ? "You" : this.playerNames.get(id) ?? "Player");
-    const suffix = headshot ? " (headshot)" : "";
+    const suffix = headshot ? " (headshot)" : limbShot ? " (limb shot)" : "";
 
     if (!this.firstBloodClaimed) {
       this.firstBloodClaimed = true;

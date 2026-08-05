@@ -2,6 +2,8 @@ import { DEFAULT_MAP_ID, IMPOSTOR_MAPS, MapDefinition, MAPS } from "@fps/shared"
 import * as THREE from "three";
 import { soundEngine } from "./audio/SoundEngine";
 import { InputManager } from "./engine/InputManager";
+import { BotMatchResult, BotMode } from "./game/BotMode";
+import { BOT_DIFFICULTIES, BotDifficultyLevel, DEFAULT_BOT_DIFFICULTY } from "./game/botDifficulty";
 import { ImpostorMatchController } from "./game/ImpostorMatchController";
 import { MatchController } from "./game/MatchController";
 import { PracticeMode } from "./game/PracticeMode";
@@ -126,6 +128,7 @@ const hud = new Hud();
 // --- Mode management: menu (idle) <-> practice <-> multiplayer match ---
 let activeMode: GameModeLike | null = null;
 let practice: PracticeMode | null = null;
+let botMode: BotMode | null = null;
 
 function startPractice(mapId: string): void {
   if (practice) practice.dispose();
@@ -144,14 +147,69 @@ function stopPractice(): void {
   practice = null;
 }
 
+function startBotMatch(mapId: string, difficulty: BotDifficultyLevel): void {
+  if (botMode) botMode.dispose();
+  screenBotResults.classList.add("hidden");
+  const { map, meshes } = loadMap(mapId);
+  botMode = new BotMode(scene, camera, input, hud, map, meshes, difficulty, (result) => showBotResults(result));
+  activeMode = botMode;
+  hud.showWeaponHud();
+  lockTitle.textContent = `${map.name} — vs Computer (${BOT_DIFFICULTIES[difficulty].label})`;
+  lockOverlay.classList.remove("hidden");
+}
+
+function stopBotMode(): void {
+  if (!botMode) return;
+  if (activeMode === botMode) activeMode = null;
+  botMode.dispose();
+  botMode = null;
+}
+
+function showBotResults(result: BotMatchResult): void {
+  if (activeMode === botMode) activeMode = null;
+  input.exitPointerLock();
+  lockOverlay.classList.add("hidden");
+  botResultsTitle.textContent =
+    result.playerKills > result.botKills ? "You Win!" : result.playerKills < result.botKills ? "Bot Wins" : "Draw";
+  botResultsScores.textContent = `You ${result.playerKills} — ${result.botKills} Bot`;
+  screenBotResults.classList.remove("hidden");
+}
+
 const practiceMapSelect = document.getElementById("practice-map") as HTMLSelectElement;
 btnPractice.addEventListener("click", () => {
   multiplayer.hideAllScreens();
+  stopBotMode();
   startPractice(practiceMapSelect.value);
+});
+
+const botDifficultySelect = document.getElementById("bot-difficulty") as HTMLSelectElement;
+botDifficultySelect.value = DEFAULT_BOT_DIFFICULTY;
+const btnPlayBot = document.getElementById("btn-play-bot") as HTMLButtonElement;
+const screenBotResults = document.getElementById("screen-bot-results") as HTMLDivElement;
+const botResultsTitle = document.getElementById("bot-results-title") as HTMLHeadingElement;
+const botResultsScores = document.getElementById("bot-results-scores") as HTMLDivElement;
+const btnBotRematch = document.getElementById("btn-bot-rematch") as HTMLButtonElement;
+const btnBotResultsMenu = document.getElementById("btn-bot-results-menu") as HTMLButtonElement;
+
+btnPlayBot.addEventListener("click", () => {
+  multiplayer.hideAllScreens();
+  stopPractice();
+  startBotMatch(practiceMapSelect.value, botDifficultySelect.value as BotDifficultyLevel);
+});
+
+btnBotRematch.addEventListener("click", () => {
+  startBotMatch(practiceMapSelect.value, botDifficultySelect.value as BotDifficultyLevel);
+});
+
+btnBotResultsMenu.addEventListener("click", () => {
+  stopBotMode();
+  screenBotResults.classList.add("hidden");
+  multiplayer.showMenu();
 });
 
 const multiplayer = new MultiplayerFlow(scene, camera, input, hud, loadMap, (match: MatchController | null) => {
   stopPractice();
+  stopBotMode();
   activeMode = match;
   if (match) {
     hud.showWeaponHud();
@@ -161,6 +219,7 @@ const multiplayer = new MultiplayerFlow(scene, camera, input, hud, loadMap, (mat
 
 const impostorFlow = new ImpostorFlow(scene, camera, input, loadMap, (match: ImpostorMatchController | null) => {
   stopPractice();
+  stopBotMode();
   activeMode = match;
   if (match) {
     // Imposter mode has no health/ammo/weapon of its own (crewmates are
@@ -213,6 +272,9 @@ btnLeaveMatch.addEventListener("click", () => {
   if (activeMode === practice) {
     stopPractice();
     multiplayer.showMenu();
+  } else if (activeMode === botMode) {
+    stopBotMode();
+    multiplayer.showMenu();
   } else if (activeMode === impostorFlow.activeMatch) {
     impostorFlow.leaveRoom();
   } else {
@@ -229,7 +291,7 @@ canvas.addEventListener("mousedown", () => {
 
 window.addEventListener("keydown", (e) => {
   if (e.code !== "Escape") return;
-  if (activeMode === practice) {
+  if (activeMode === practice || activeMode === botMode) {
     lockOverlay.classList.remove("hidden");
   } else {
     input.exitPointerLock();
@@ -252,9 +314,15 @@ function animate(now: number) {
   const frameDt = Math.min((now - last) / 1000, 0.1);
   last = now;
 
-  if (activeMode) {
-    activeMode.update(frameDt);
-    const shake = activeMode.getShakeOffset();
+  // Captured once per frame rather than re-reading the outer `activeMode`
+  // between calls — BotMode's match-end callback fires synchronously from
+  // inside its own update() (no server round-trip to defer it to, unlike
+  // Duel/Imposter), which reassigns the outer variable to null mid-frame.
+  // Re-reading it for getShakeOffset() would then crash on a null access.
+  const mode = activeMode;
+  if (mode) {
+    mode.update(frameDt);
+    const shake = mode.getShakeOffset();
     camera.rotation.x += shake.pitch;
     camera.rotation.y += shake.yaw;
     camera.rotation.z += shake.roll;
@@ -300,6 +368,9 @@ if (import.meta.env.DEV) {
     },
     get combat() {
       return practice?.combat;
+    },
+    get botMode() {
+      return botMode;
     },
     camera,
     scene,

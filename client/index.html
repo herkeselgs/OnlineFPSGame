@@ -130,6 +130,18 @@
             </select>
           </label>
           <button id="btn-practice" class="btn-secondary">Practice (offline)</button>
+
+          <div class="menu-divider"><span>or</span></div>
+
+          <label class="row">
+            <span>Bot difficulty</span>
+            <select id="bot-difficulty">
+              <option value="easy">Easy</option>
+              <option value="medium" selected>Medium</option>
+              <option value="hard">Hard</option>
+            </select>
+          </label>
+          <button id="btn-play-bot" class="btn-secondary">Play vs Computer</button>
         </div>
 
         <div id="impostor-mode-panel" class="hidden">
@@ -177,6 +189,15 @@
         <div id="results-scores" class="results-scores"></div>
         <button id="btn-rematch" class="btn-primary">Ready for Rematch</button>
         <button id="btn-results-menu" class="btn-secondary">Back to Menu</button>
+      </div>
+    </div>
+
+    <div id="screen-bot-results" class="screen hidden">
+      <div class="screen-panel">
+        <h1 id="bot-results-title">Match Over</h1>
+        <div id="bot-results-scores" class="results-scores"></div>
+        <button id="btn-bot-rematch" class="btn-primary">Play Again</button>
+        <button id="btn-bot-results-menu" class="btn-secondary">Back to Menu</button>
       </div>
     </div>
 

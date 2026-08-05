@@ -2,9 +2,9 @@ import {
   applyDamage,
   ClientMessage,
   createPlayerCombatState,
+  damageMultiplierFor,
   DEFAULT_MAP_ID,
-  headHitBox,
-  HEADSHOT_DAMAGE_MULTIPLIER,
+  HitZone,
   INTERP_DELAY_MS,
   MAPS,
   MATCH_COUNTDOWN_MS,
@@ -18,6 +18,7 @@ import {
   PlayerSnapshot,
   rayIntersectsBox,
   RECONNECT_GRACE_MS,
+  resolvePlayerHit,
   RESPAWN_TIME_MS,
   RESULTS_DISPLAY_MS,
   respawn,
@@ -26,7 +27,6 @@ import {
   SIM_HZ,
   SNAPSHOT_HZ,
   stepPlayerMovement,
-  torsoHitBox,
   Vec3,
   WeaponDef,
   WeaponState,
@@ -392,30 +392,25 @@ export class Room {
     }
 
     let bestTarget: PlayerSession | null = null;
-    let bestIsHeadshot = false;
+    let bestZone: HitZone = "torso";
     for (const [id, target] of this.players) {
       if (id === shooter.id || !target.combat.alive) continue;
       const sample = target.history.sampleAt(rewindTime) ?? target.history.latest();
       if (!sample) continue;
 
-      const torso = rayIntersectsBox(origin, dir, torsoHitBox(sample.position), nearestDist);
-      if (torso !== null && torso < nearestDist) {
-        nearestDist = torso;
+      const hit = resolvePlayerHit(origin, dir, sample.position, nearestDist);
+      if (hit && hit.distance < nearestDist) {
+        nearestDist = hit.distance;
         bestTarget = target;
-        bestIsHeadshot = false;
-      }
-      const head = rayIntersectsBox(origin, dir, headHitBox(sample.position), nearestDist);
-      if (head !== null && head < nearestDist) {
-        nearestDist = head;
-        bestTarget = target;
-        bestIsHeadshot = true;
+        bestZone = hit.zone;
       }
     }
 
     if (!bestTarget) return;
 
-    const headshot = bestIsHeadshot;
-    const damage = headshot ? weaponDef.damage * HEADSHOT_DAMAGE_MULTIPLIER : weaponDef.damage;
+    const headshot = bestZone === "head";
+    const limbShot = bestZone === "limb";
+    const damage = weaponDef.damage * damageMultiplierFor(bestZone);
 
     const dmg = applyDamage(bestTarget.combat, damage, nowMs);
     if (!dmg.applied) return;
@@ -429,6 +424,7 @@ export class Room {
       damage,
       killed: dmg.killed,
       headshot,
+      limbShot,
     });
     this.send(bestTarget.id, { type: "damage_taken", attackerPosition: origin });
 
@@ -441,6 +437,7 @@ export class Room {
         victimId: bestTarget.id,
         weapon: weaponDef.id,
         headshot,
+        limbShot,
       });
     }
   }

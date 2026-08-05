@@ -1,4 +1,4 @@
-import { HEADSHOT_DAMAGE_MULTIPLIER, WeaponId, WeaponState } from "@fps/shared";
+import { damageMultiplierFor, HitZone, WeaponId, WeaponState } from "@fps/shared";
 import * as THREE from "three";
 import { soundEngine } from "../audio/SoundEngine";
 import { InputManager } from "../engine/InputManager";
@@ -15,7 +15,7 @@ const SWITCH_KEYS: Record<string, WeaponId> = {
 };
 
 export interface CombatEvents {
-  onHit(killed: boolean, headshot: boolean): void;
+  onHit(killed: boolean, headshot: boolean, limbShot: boolean): void;
 }
 
 /**
@@ -64,7 +64,7 @@ export class CombatSystem {
 
   addTarget(target: Target): void {
     this.targets.push(target);
-    this.raycastables.push(target.mesh, target.headMesh);
+    this.raycastables.push(...target.raycastMeshes);
   }
 
   /** dt in seconds (matches the render loop), used for shake decay. */
@@ -143,6 +143,7 @@ export class CombatSystem {
     let anyHit = false;
     let anyKill = false;
     let anyHeadshot = false;
+    let anyLimbShot = false;
 
     for (let i = 0; i < result.pelletCount; i++) {
       const dir = randomSpreadDirection(forward, right, up, def.spreadRadians);
@@ -158,20 +159,23 @@ export class CombatSystem {
       if (!targetRef) continue;
 
       anyHit = true;
-      // Practice mode has both the body and head as separate raycastable
-      // meshes (unlike the server, which has no visual geometry to check
-      // against and needs the box-based classification instead) — which one
-      // Three.js actually hit IS the headshot classification here.
-      const headshot = hits[0].object === targetRef.headMesh;
-      const damage = headshot ? def.damage * HEADSHOT_DAMAGE_MULTIPLIER : def.damage;
+      // Practice mode has real geometry to raycast against (unlike the
+      // server, which has no visual scene and uses the box-based
+      // classification directly) — but each hitbox mesh carries the same
+      // "head" | "torso" | "limb" tag the server's boxes would classify it
+      // as, via userData.hitZone (see Target's constructor), so the two
+      // stay in agreement despite using different mechanisms to get there.
+      const zone = (hits[0].object.userData.hitZone as HitZone | undefined) ?? "torso";
+      const damage = def.damage * damageMultiplierFor(zone);
       const killed = targetRef.applyDamage(damage);
       if (killed) anyKill = true;
-      if (headshot) anyHeadshot = true;
+      if (zone === "head") anyHeadshot = true;
+      if (zone === "limb") anyLimbShot = true;
     }
 
     if (anyHit) {
       soundEngine.playHitmarker(anyKill, anyHeadshot);
-      this.events.onHit(anyKill, anyHeadshot);
+      this.events.onHit(anyKill, anyHeadshot, anyLimbShot);
     }
   }
 }

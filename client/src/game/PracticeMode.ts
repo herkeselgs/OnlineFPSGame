@@ -31,9 +31,12 @@ export class PracticeMode {
   ) {
     this.player = new PlayerController(map.spawns[0], map.blocks, input, map.ladders);
     this.combat = new CombatSystem(scene, camera, input, {
-      onHit(killed, headshot) {
+      onHit(killed, headshot, limbShot) {
         hud.flashHitmarker(killed, headshot);
-        if (killed) hud.pushFeed(headshot ? "You eliminated Dummy (headshot)" : "You eliminated Dummy");
+        if (killed) {
+          const suffix = headshot ? " (headshot)" : limbShot ? " (limb shot)" : "";
+          hud.pushFeed(`You eliminated Dummy${suffix}`);
+        }
       },
     });
     this.combat.setRaycastables([...mapMeshes]);

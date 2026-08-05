@@ -1,4 +1,14 @@
-import { HEAD_BAND_MAX_Y, HEAD_BAND_MIN_Y, HEAD_HALF_WIDTH, PLAYER_HALF_EXTENTS, PLAYER_RADIUS } from "./constants.js";
+import {
+  ARM_ZONE_HALF_WIDTH,
+  HEAD_BAND_MAX_Y,
+  HEAD_BAND_MIN_Y,
+  HEAD_HALF_WIDTH,
+  HEADSHOT_DAMAGE_MULTIPLIER,
+  LEG_BAND_MAX_Y,
+  LIMB_DAMAGE_MULTIPLIER,
+  PLAYER_HALF_EXTENTS,
+  PLAYER_RADIUS,
+} from "./constants.js";
 import { Vec3 } from "./vec.js";
 
 /** Axis-aligned static collider box, defined by center + half-extents.
@@ -66,12 +76,12 @@ export function rayIntersectsBox(
 }
 
 /** The torso hit box for a player centered at `bodyCenter`: same width as
- * the movement box, but only up to HEAD_BAND_MIN_Y — the head box (below)
- * picks up everything above that. Used only for hit detection, never
- * movement/collision (which keeps using one uniform PLAYER_HALF_EXTENTS
- * box, unchanged). */
+ * the movement box, spanning from LEG_BAND_MAX_Y (the leg box picks up
+ * everything below that) up to HEAD_BAND_MIN_Y (the head box picks up
+ * everything above). Used only for hit detection, never movement/collision
+ * (which keeps using one uniform PLAYER_HALF_EXTENTS box, unchanged). */
 export function torsoHitBox(bodyCenter: Vec3): BoxCollider {
-  const yMin = -PLAYER_HALF_EXTENTS.y;
+  const yMin = LEG_BAND_MAX_Y;
   const yMax = HEAD_BAND_MIN_Y;
   return {
     center: { x: bodyCenter.x, y: bodyCenter.y + (yMin + yMax) / 2, z: bodyCenter.z },
@@ -90,6 +100,68 @@ export function headHitBox(bodyCenter: Vec3): BoxCollider {
     center: { x: bodyCenter.x, y: bodyCenter.y + (yMin + yMax) / 2, z: bodyCenter.z },
     half: { x: HEAD_HALF_WIDTH, y: (yMax - yMin) / 2, z: HEAD_HALF_WIDTH },
   };
+}
+
+/** The leg hit box: same width as the torso, filling the rest of the way
+ * down from LEG_BAND_MAX_Y to the feet. Disjoint from the torso box above
+ * it for the same reason head/torso are — see that pair's comment. */
+export function legHitBox(bodyCenter: Vec3): BoxCollider {
+  const yMin = -PLAYER_HALF_EXTENTS.y;
+  const yMax = LEG_BAND_MAX_Y;
+  return {
+    center: { x: bodyCenter.x, y: bodyCenter.y + (yMin + yMax) / 2, z: bodyCenter.z },
+    half: { x: PLAYER_RADIUS, y: (yMax - yMin) / 2, z: PLAYER_RADIUS },
+  };
+}
+
+/** The two arm hit boxes, flanking the torso box on either side at the same
+ * height (a held-forward arm sits beside the torso, not stacked above or
+ * below it, so this pair splits on X instead of Y). */
+export function armHitBoxes(bodyCenter: Vec3): [BoxCollider, BoxCollider] {
+  const yMin = LEG_BAND_MAX_Y;
+  const yMax = HEAD_BAND_MIN_Y;
+  const yHalf = (yMax - yMin) / 2;
+  const yCenter = bodyCenter.y + (yMin + yMax) / 2;
+  const xOffset = PLAYER_RADIUS + ARM_ZONE_HALF_WIDTH;
+  const half = { x: ARM_ZONE_HALF_WIDTH, y: yHalf, z: PLAYER_RADIUS };
+  return [
+    { center: { x: bodyCenter.x - xOffset, y: yCenter, z: bodyCenter.z }, half },
+    { center: { x: bodyCenter.x + xOffset, y: yCenter, z: bodyCenter.z }, half },
+  ];
+}
+
+export type HitZone = "head" | "torso" | "limb";
+
+/** Tests a shot against every one of a target's hit boxes (head, torso,
+ * legs, both arms) and returns whichever is nearest along the ray, or null
+ * if none are hit within maxDist — the single source of truth for hit-zone
+ * classification, used identically by the server's authoritative hit
+ * validation and any client that wants to classify a shot the same way
+ * (practice mode's local combat, which has no server to defer to). */
+export function resolvePlayerHit(
+  origin: Vec3,
+  dir: Vec3,
+  bodyCenter: Vec3,
+  maxDist: number
+): { distance: number; zone: HitZone } | null {
+  let best: { distance: number; zone: HitZone } | null = null;
+  const check = (box: BoxCollider, zone: HitZone) => {
+    const d = rayIntersectsBox(origin, dir, box, best ? best.distance : maxDist);
+    if (d !== null && (best === null || d < best.distance)) best = { distance: d, zone };
+  };
+  check(torsoHitBox(bodyCenter), "torso");
+  check(headHitBox(bodyCenter), "head");
+  check(legHitBox(bodyCenter), "limb");
+  const [armLeft, armRight] = armHitBoxes(bodyCenter);
+  check(armLeft, "limb");
+  check(armRight, "limb");
+  return best;
+}
+
+export function damageMultiplierFor(zone: HitZone): number {
+  if (zone === "head") return HEADSHOT_DAMAGE_MULTIPLIER;
+  if (zone === "limb") return LIMB_DAMAGE_MULTIPLIER;
+  return 1;
 }
 
 export interface AxisMoveResult {
