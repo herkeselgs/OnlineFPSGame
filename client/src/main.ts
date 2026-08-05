@@ -88,6 +88,13 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(90, window.innerWidth / window.innerHeight, 0.05, 200);
 camera.rotation.order = "YXZ";
+// WebGLRenderer.render(scene, camera) only ever walks the `scene` graph to
+// build its render list — camera.add(x) (MuzzleFlashEffect's sprite, the
+// first-person Viewmodel) silently never renders unless the camera itself
+// is somewhere inside that graph. Doesn't affect view/projection (those
+// still come from the `camera` argument passed to render() directly), just
+// makes its children actually show up.
+scene.add(camera);
 
 // Map geometry is (re)built on demand — practice mode and each multiplayer
 // match may use a different map, so nothing is built once-and-reused here.

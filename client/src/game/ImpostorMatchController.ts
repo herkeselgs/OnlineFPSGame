@@ -18,6 +18,7 @@ import { soundEngine } from "../audio/SoundEngine";
 import { ClockSync } from "../net/ClockSync";
 import { InputManager } from "../engine/InputManager";
 import { NetClient } from "../net/NetClient";
+import { Viewmodel } from "../render/viewmodel";
 import { ImpostorPredictionController } from "./ImpostorPredictionController";
 import { ImpostorRemotePlayer } from "./ImpostorRemotePlayer";
 import { ImpostorTaskHud } from "./ImpostorTaskHud";
@@ -125,9 +126,11 @@ export class ImpostorMatchController {
   private activeSequenceProgress = 0;
   private static readonly SEQUENCE_KEY_CODES = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"] as const;
 
+  private viewmodel: Viewmodel;
+
   constructor(
     private scene: THREE.Scene,
-    camera: THREE.PerspectiveCamera,
+    private camera: THREE.PerspectiveCamera,
     input: InputManager,
     private net: NetClient,
     private selfId: PlayerId,
@@ -143,6 +146,13 @@ export class ImpostorMatchController {
     this.taskHud = taskHud;
     this.callbacks = callbacks;
     this.prediction = new ImpostorPredictionController(spawn, colliders, input, net, camera, ladders);
+
+    // Crewmates carry no weapon at all (see hasWeapon's file comment in
+    // impostorProtocol.ts) — hidden until imp_role_assigned confirms this
+    // client is actually the imposter, so a crewmate never sees a gun in
+    // their own hands either.
+    this.viewmodel = new Viewmodel(camera);
+    this.viewmodel.setVisible(false);
 
     this.unsubscribe = net.onMessage((msg) => this.handleMessage(msg as ImpostorServerMessage));
     this.pingTimer = setInterval(() => net.send({ type: "ping", t: Date.now() }), PING_INTERVAL_MS);
@@ -163,7 +173,8 @@ export class ImpostorMatchController {
     }
 
     const renderTime = this.clock.estimateServerTime() - INTERP_DELAY_MS;
-    for (const rp of this.remotePlayersMap.values()) rp.update(renderTime);
+    for (const rp of this.remotePlayersMap.values()) rp.update(renderTime, frameDt * 1000);
+    this.viewmodel.update(frameDt * 1000);
   }
 
   getShakeOffset(): { yaw: number; pitch: number; roll: number } {
@@ -191,6 +202,7 @@ export class ImpostorMatchController {
     this.stationMarkers.clear();
     for (const marker of this.bodyMarkers.values()) this.disposeMarker(marker);
     this.bodyMarkers.clear();
+    this.viewmodel.dispose(this.camera);
     this.taskHud.hide();
   }
 
@@ -208,6 +220,7 @@ export class ImpostorMatchController {
         break;
       case "imp_role_assigned":
         this.role = msg.role;
+        this.viewmodel.setVisible(msg.role === "imposter");
         this.callbacks.onRoleAssigned(
           msg.role,
           msg.fellowImposters.map((id) => this.playerNames.get(id) ?? "Player")
@@ -327,7 +340,7 @@ export class ImpostorMatchController {
         rp = new ImpostorRemotePlayer(this.scene, p.id, this.playerNames.get(p.id) ?? "Player");
         this.remotePlayersMap.set(p.id, rp);
       }
-      rp.ingestSnapshot(p.position, p.yaw, serverTimeMs, p.color, p.hasWeapon);
+      rp.ingestSnapshot(p.position, p.yaw, p.pitch, p.velocity, serverTimeMs, p.color, p.hasWeapon);
       this.remoteHasWeapon.set(p.id, p.hasWeapon);
     }
     // Ejected players stop appearing in snapshots entirely (see
@@ -500,6 +513,7 @@ export class ImpostorMatchController {
     this.taskHud.showKillPrompt(this.playerNames.get(target) ?? "Player");
     if (this.input.consumeJustPressed(INTERACT_KEY)) {
       this.net.send({ type: "imp_kill", targetId: target });
+      this.viewmodel.triggerRecoil();
     }
   }
 

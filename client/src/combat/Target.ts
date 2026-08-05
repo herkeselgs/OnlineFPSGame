@@ -1,16 +1,18 @@
 import { HEAD_BAND_MAX_Y, HEAD_BAND_MIN_Y, MAX_HEALTH, RESPAWN_TIME_MS, Vec3 } from "@fps/shared";
 import * as THREE from "three";
+import { buildCharacterModel, CharacterModel } from "../render/characterModel";
 
 const BODY_COLOR = 0xe0563a;
-const FLASH_COLOR = 0xffffff;
-const FLASH_DURATION_MS = 90;
 const HEAD_VISUAL_RADIUS = 0.22;
 const HEAD_VISUAL_OFFSET_Y = (HEAD_BAND_MIN_Y + HEAD_BAND_MAX_Y) / 2 + 0.05;
 
 /**
  * Stationary practice dummy for testing hit detection before real players
  * exist. Capsule silhouette roughly matches real player dimensions so aim
- * habits transfer once multiplayer lands.
+ * habits transfer once multiplayer lands. `mesh`/`headMesh` are the actual
+ * raycast targets (see CombatSystem) and stay invisible primitives at
+ * their original geometry/position, exactly like RemotePlayer — the
+ * visible body is an articulated CharacterModel riding on top.
  */
 export class Target {
   readonly mesh: THREE.Mesh;
@@ -21,7 +23,7 @@ export class Target {
   private geometry: THREE.CapsuleGeometry;
   private headGeometry: THREE.SphereGeometry;
   private material: THREE.MeshLambertMaterial;
-  private flashRemainingMs = 0;
+  private character: CharacterModel;
   private respawnRemainingMs = 0;
   private readonly spawnPosition: Vec3;
 
@@ -29,25 +31,26 @@ export class Target {
     this.spawnPosition = { ...position };
     this.geometry = new THREE.CapsuleGeometry(0.35, 1.0, 4, 8);
     this.headGeometry = new THREE.SphereGeometry(HEAD_VISUAL_RADIUS, 8, 6);
-    this.material = new THREE.MeshLambertMaterial({ color: BODY_COLOR });
+    this.material = new THREE.MeshLambertMaterial({ color: BODY_COLOR, visible: false });
     this.mesh = new THREE.Mesh(this.geometry, this.material);
     this.mesh.position.set(position.x, position.y, position.z);
     this.mesh.userData.targetRef = this;
-    // Shares the body's material so the hit-flash (color swap) hits both
-    // meshes for free.
     this.headMesh = new THREE.Mesh(this.headGeometry, this.material);
     this.headMesh.position.set(position.x, position.y + HEAD_VISUAL_OFFSET_Y, position.z);
     this.headMesh.userData.targetRef = this;
     scene.add(this.mesh);
     scene.add(this.headMesh);
+
+    this.character = buildCharacterModel(BODY_COLOR);
+    this.character.setHoldingWeapon(true);
+    this.mesh.add(this.character.root);
   }
 
   /** Returns true if this shot killed the target. */
   applyDamage(amount: number): boolean {
     if (!this.alive) return false;
     this.health = Math.max(0, this.health - amount);
-    this.flashRemainingMs = FLASH_DURATION_MS;
-    this.material.color.setHex(FLASH_COLOR);
+    this.character.flashHit();
 
     if (this.health <= 0) {
       this.alive = false;
@@ -60,10 +63,7 @@ export class Target {
   }
 
   update(dtMs: number): void {
-    if (this.flashRemainingMs > 0) {
-      this.flashRemainingMs -= dtMs;
-      if (this.flashRemainingMs <= 0) this.material.color.setHex(BODY_COLOR);
-    }
+    this.character.updateAnimation(dtMs, 0, 0);
 
     if (!this.alive) {
       this.respawnRemainingMs -= dtMs;
@@ -90,5 +90,6 @@ export class Target {
     this.geometry.dispose();
     this.headGeometry.dispose();
     this.material.dispose();
+    this.character.dispose();
   }
 }

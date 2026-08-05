@@ -3,6 +3,7 @@ import * as THREE from "three";
 import { soundEngine } from "../audio/SoundEngine";
 import { InputManager } from "../engine/InputManager";
 import { MuzzleFlashEffect, ScreenShake, TracerPool } from "../render/effects";
+import { Viewmodel } from "../render/viewmodel";
 import { randomSpreadDirection } from "./spread";
 import { Target } from "./Target";
 import { feelFor } from "./weaponFeel";
@@ -30,6 +31,7 @@ export class CombatSystem {
   private raycaster = new THREE.Raycaster();
   private raycastables: THREE.Object3D[] = [];
   private muzzleFlash: MuzzleFlashEffect;
+  private viewmodel: Viewmodel;
   private tracers: TracerPool;
   private shake = new ScreenShake();
   private wasReloading = false;
@@ -44,7 +46,16 @@ export class CombatSystem {
     private events: CombatEvents
   ) {
     this.muzzleFlash = new MuzzleFlashEffect(camera);
+    this.viewmodel = new Viewmodel(camera);
     this.tracers = new TracerPool(scene);
+  }
+
+  /** Unlike MuzzleFlashEffect (a cheap, invisible-by-default sprite this
+   * class has always just left attached to the long-lived camera across
+   * practice restarts), the viewmodel is a visible gun mesh — leaving old
+   * ones behind would visibly stack up, so it gets its own cleanup. */
+  dispose(): void {
+    this.viewmodel.dispose(this.camera);
   }
 
   setRaycastables(objects: THREE.Object3D[]): void {
@@ -63,6 +74,7 @@ export class CombatSystem {
     for (const t of this.targets) t.update(dtMs);
     this.tracers.update(dtMs);
     this.muzzleFlash.update(dtMs);
+    this.viewmodel.update(dtMs);
     this.shake.update(dt);
 
     for (const [code, id] of Object.entries(SWITCH_KEYS)) {
@@ -114,6 +126,7 @@ export class CombatSystem {
     if (!result.fired) return;
 
     this.muzzleFlash.trigger();
+    this.viewmodel.triggerRecoil();
     const def = this.weapon.current;
     const feel = feelFor(def.id);
     this.shake.addTrauma(feel.trauma);

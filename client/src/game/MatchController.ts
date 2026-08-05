@@ -15,6 +15,7 @@ import { feelFor } from "../combat/weaponFeel";
 import { InputManager } from "../engine/InputManager";
 import { NetClient } from "../net/NetClient";
 import { MuzzleFlashEffect, ScreenShake, TracerPool } from "../render/effects";
+import { Viewmodel } from "../render/viewmodel";
 import { Hud } from "../ui/Hud";
 import { ClockSync } from "../net/ClockSync";
 import { LocalFireEvent, PredictionController } from "./PredictionController";
@@ -37,6 +38,7 @@ export class MatchController {
   private clock = new ClockSync();
   private tracers: TracerPool;
   private muzzleFlash: MuzzleFlashEffect;
+  private viewmodel: Viewmodel;
   private shake = new ScreenShake();
   private raycaster = new THREE.Raycaster();
   private raycastables: THREE.Object3D[];
@@ -67,6 +69,7 @@ export class MatchController {
     this.prediction = new PredictionController(spawn, colliders, input, net, camera, ladders);
     this.tracers = new TracerPool(scene);
     this.muzzleFlash = new MuzzleFlashEffect(camera);
+    this.viewmodel = new Viewmodel(camera);
     this.raycastables = [...mapMeshes];
 
     this.unsubscribe = net.onMessage((msg) => this.handleMessage(msg as ServerMessage));
@@ -79,10 +82,11 @@ export class MatchController {
     for (const ev of fireEvents) this.spawnLocalFireEffects(ev);
 
     const renderTime = this.clock.estimateServerTime() - INTERP_DELAY_MS;
-    for (const rp of this.remotePlayersMap.values()) rp.update(renderTime);
+    for (const rp of this.remotePlayersMap.values()) rp.update(renderTime, frameDt * 1000);
 
     this.tracers.update(frameDt * 1000);
     this.muzzleFlash.update(frameDt * 1000);
+    this.viewmodel.update(frameDt * 1000);
     this.shake.update(frameDt);
     this.hud.update(frameDt * 1000);
 
@@ -122,6 +126,7 @@ export class MatchController {
     clearInterval(this.pingTimer);
     for (const rp of this.remotePlayersMap.values()) rp.dispose(this.scene);
     this.remotePlayersMap.clear();
+    this.viewmodel.dispose(this.camera);
     this.hud.hideMatchInfo();
   }
 
@@ -166,12 +171,25 @@ export class MatchController {
         this.remotePlayersMap.set(p.id, rp);
         this.raycastables.push(rp.mesh, rp.headMesh);
       }
-      rp.ingestSnapshot(p.position, p.yaw, serverTimeMs, p.health, p.alive, p.weapon, p.color, p.kills, p.deaths);
+      rp.ingestSnapshot(
+        p.position,
+        p.yaw,
+        p.pitch,
+        p.velocity,
+        serverTimeMs,
+        p.health,
+        p.alive,
+        p.weapon,
+        p.color,
+        p.kills,
+        p.deaths
+      );
     }
   }
 
   private spawnLocalFireEffects(ev: LocalFireEvent): void {
     this.muzzleFlash.trigger();
+    this.viewmodel.triggerRecoil();
     const feel = feelFor(ev.weapon.id);
     this.shake.addTrauma(feel.trauma);
     this.shake.addKick(feel.kick);

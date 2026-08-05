@@ -68,5 +68,6 @@ export class PracticeMode {
     soundEngine.stopAmbient();
     for (const t of this.targets) t.dispose(this.scene);
     this.targets = [];
+    this.combat.dispose();
   }
 }
