@@ -1,5 +1,6 @@
 import { MapDefinition } from "@fps/shared";
 import * as THREE from "three";
+import { applyFoundryTheme } from "./FoundryDetails";
 
 export interface BuiltMapScene {
   meshes: THREE.Mesh[];
@@ -91,6 +92,12 @@ export function buildMapScene(scene: THREE.Scene, map: MapDefinition): BuiltMapS
     }
   }
 
+  // Foundry-only visual dressing (textures, props, extra lighting) — a
+  // separate module gated by map id so Bastion/Outpost's rendering is
+  // completely untouched. Runs after the base meshes above exist since it
+  // re-skins their materials and reads their sizes/positions.
+  const foundryTheme = map.id === "test-arena" ? applyFoundryTheme(scene, meshes) : null;
+
   return {
     meshes,
     dispose() {
@@ -101,6 +108,7 @@ export function buildMapScene(scene: THREE.Scene, map: MapDefinition): BuiltMapS
       geometry.dispose();
       ladderMaterial.dispose();
       for (const mat of materialCache.values()) mat.dispose();
+      foundryTheme?.dispose();
     },
   };
 }
