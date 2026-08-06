@@ -165,7 +165,7 @@ export class Bot {
     this.weapon.update(frameDt * 1000);
 
     if (!this.combat.alive || !playerAlive) {
-      this.character.updateAnimation(frameDt * 1000, 0, 0);
+      this.character.updateAnimation(frameDt * 1000, 0, 0, this.weapon.isReloading);
       return null;
     }
 
@@ -231,7 +231,7 @@ export class Bot {
 
     this.positionHitboxes();
     const speed = Math.hypot(this.physics.velocity.x, this.physics.velocity.z);
-    this.character.updateAnimation(frameDt * 1000, speed, 0);
+    this.character.updateAnimation(frameDt * 1000, speed, 0, this.weapon.isReloading);
 
     let fireEvent: BotFireEvent | null = null;
     const reactionElapsed = this.losAcquiredAtMs !== null && nowMs - this.losAcquiredAtMs >= difficulty.reactionMs;

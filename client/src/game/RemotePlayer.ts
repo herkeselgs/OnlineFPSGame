@@ -59,6 +59,7 @@ export class RemotePlayer {
   private lastHealth = 100;
   private lastVelocity: Vec3 = { x: 0, y: 0, z: 0 };
   private lastPitch = 0;
+  private reloading = false;
 
   constructor(scene: THREE.Scene, id: string, name: string) {
     this.id = id;
@@ -113,7 +114,8 @@ export class RemotePlayer {
     weapon: WeaponId,
     color: number,
     kills: number,
-    deaths: number
+    deaths: number,
+    reloading: boolean
   ): void {
     this.history.push({ time: serverTimeMs, position, yaw });
     if (health < this.lastHealth && alive) this.character.flashHit();
@@ -125,6 +127,8 @@ export class RemotePlayer {
     this.deaths = deaths;
     this.lastVelocity = velocity;
     this.lastPitch = pitch;
+    this.reloading = reloading;
+    this.character.setWeapon(weapon);
     if (color !== this.currentColor) {
       this.currentColor = color;
       this.material.color.setHex(color);
@@ -145,7 +149,7 @@ export class RemotePlayer {
       this.armMeshRight.position.set(armRight.center.x, armRight.center.y, armRight.center.z);
     }
     const speed = Math.hypot(this.lastVelocity.x, this.lastVelocity.z);
-    this.character.updateAnimation(frameDtMs, speed, this.lastPitch);
+    this.character.updateAnimation(frameDtMs, speed, this.lastPitch, this.reloading);
     for (const m of this.raycastMeshes) m.visible = this.alive;
   }
 

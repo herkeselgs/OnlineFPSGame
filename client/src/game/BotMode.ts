@@ -128,7 +128,8 @@ export class BotMode {
     this.weapon.update(frameDt * 1000);
     this.tracers.update(frameDt * 1000);
     this.muzzleFlash.update(frameDt * 1000);
-    this.viewmodel.update(frameDt * 1000);
+    this.viewmodel.setWeapon(this.weapon.currentId);
+    this.viewmodel.update(frameDt * 1000, this.weapon.isReloading, this.weapon.reloadProgress);
     this.shake.update(frameDt);
     this.hud.update(frameDt * 1000);
     this.handlePlayerWeaponInput();

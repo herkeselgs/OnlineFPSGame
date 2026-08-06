@@ -1,5 +1,6 @@
+import { WeaponId } from "@fps/shared";
 import * as THREE from "three";
-import { buildStandaloneGun } from "./characterModel";
+import { buildStandaloneGun, StandaloneGun } from "./characterModel";
 
 const REST_POSITION = new THREE.Vector3(0.2, -0.19, -0.75);
 const REST_ROTATION_Y = THREE.MathUtils.degToRad(-9);
@@ -7,6 +8,15 @@ const REST_ROTATION_X = THREE.MathUtils.degToRad(1.5);
 const SCALE = 0.8;
 const KICK_DISTANCE = 0.07;
 const KICK_RECOVER_PER_SECOND = 15;
+
+// Reload animation: the gun dips down and rolls forward, peaking at the
+// midpoint of the reload and returning to rest exactly as it completes —
+// shaped by sin(reloadProgress * PI) so it's 0 at both ends and 1 at the
+// midpoint, synced precisely to WeaponState.reloadProgress since the local
+// player (unlike remote ones) has that exact fraction available every frame.
+const RELOAD_DIP_Y = 0.14;
+const RELOAD_TILT_X_RAD = THREE.MathUtils.degToRad(30);
+const RELOAD_ROLL_Z_RAD = THREE.MathUtils.degToRad(14);
 
 const SLEEVE_COLOR = 0x2c3136;
 const GLOVE_COLOR = 0x1c1f22;
@@ -42,7 +52,7 @@ function buildArmSegment(from: THREE.Vector3, to: THREE.Vector3, material: THREE
  */
 export class Viewmodel {
   private group: THREE.Group;
-  private gun: { group: THREE.Group; dispose(): void };
+  private gun: StandaloneGun;
   private kickOffset = 0;
 
   private armGeometries: THREE.CylinderGeometry[] = [];
@@ -105,6 +115,12 @@ export class Viewmodel {
     this.group.visible = visible;
   }
 
+  /** Swaps the held weapon's mesh (rifle/smg/shotgun each look different
+   * now). No-ops if it's already the current weapon. */
+  setWeapon(weaponId: WeaponId): void {
+    this.gun.setWeapon(weaponId);
+  }
+
   /** Call on every successful shot — kicks the gun back toward the camera,
    * then springs it forward again, echoing the same recoil moment
    * ScreenShake gives the camera itself. */
@@ -112,11 +128,14 @@ export class Viewmodel {
     this.kickOffset = KICK_DISTANCE;
   }
 
-  update(dtMs: number): void {
+  update(dtMs: number, isReloading = false, reloadProgress = 1): void {
     if (this.kickOffset > 0) {
       this.kickOffset = Math.max(0, this.kickOffset - this.kickOffset * Math.min(1, (KICK_RECOVER_PER_SECOND * dtMs) / 1000));
-      this.group.position.z = REST_POSITION.z + this.kickOffset;
     }
+
+    const reloadShape = isReloading ? Math.sin(Math.min(1, Math.max(0, reloadProgress)) * Math.PI) : 0;
+    this.group.position.set(REST_POSITION.x, REST_POSITION.y - reloadShape * RELOAD_DIP_Y, REST_POSITION.z + this.kickOffset);
+    this.group.rotation.set(REST_ROTATION_X + reloadShape * RELOAD_TILT_X_RAD, REST_ROTATION_Y, reloadShape * RELOAD_ROLL_Z_RAD);
   }
 
   dispose(camera: THREE.Camera): void {

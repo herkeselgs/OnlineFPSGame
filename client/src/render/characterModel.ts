@@ -1,3 +1,4 @@
+import { WeaponId } from "@fps/shared";
 import * as THREE from "three";
 
 /**
@@ -61,6 +62,16 @@ const GUN_POSITION = { x: 0, y: 0.32, z: -0.58 };
 const WALK_SWING_MAX_RAD = THREE.MathUtils.degToRad(38);
 const WALK_CYCLE_SPEED = 7.5; // radians of phase per m/s of horizontal speed
 
+// Reload "tell": the held weapon dips and rolls forward while reloading,
+// then springs back — driven either by exact WeaponState.reloadProgress
+// (first-person viewmodel, which has that data locally) or an eased
+// boolean approach/retreat toward the same pose (third-person rigs, which
+// only ever get PlayerSnapshot's `reloading` flag, not a progress
+// fraction — see RemotePlayer/Bot).
+const RELOAD_EASE_MS = 260;
+const RELOAD_TILT_X_RAD = THREE.MathUtils.degToRad(26);
+const RELOAD_ROLL_Z_RAD = THREE.MathUtils.degToRad(12);
+
 function darken(hex: number, factor: number): number {
   const r = ((hex >> 16) & 0xff) * factor;
   const g = ((hex >> 8) & 0xff) * factor;
@@ -77,31 +88,105 @@ function buildLimbSegment(length: number, radius: number, material: THREE.Materi
   return new THREE.Mesh(geometry, material);
 }
 
-/** Body + barrel + stock + magazine, local -Z is the direction the barrel
+function addBox(
+  group: THREE.Group,
+  material: THREE.Material,
+  size: { x: number; y: number; z: number },
+  position: { x: number; y: number; z: number },
+  rotationX = 0
+): THREE.Mesh {
+  const mesh = new THREE.Mesh(new THREE.BoxGeometry(size.x, size.y, size.z), material);
+  mesh.position.set(position.x, position.y, position.z);
+  if (rotationX) mesh.rotation.x = rotationX;
+  group.add(mesh);
+  return mesh;
+}
+
+function addBarrel(
+  group: THREE.Group,
+  material: THREE.Material,
+  radius: number,
+  length: number,
+  position: { x: number; y: number; z: number }
+): THREE.Mesh {
+  const mesh = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, length, 6), material);
+  mesh.rotation.x = Math.PI / 2;
+  mesh.position.set(position.x, position.y, position.z);
+  group.add(mesh);
+  return mesh;
+}
+
+/** Body + barrel + stock/magazine, local -Z is the direction the barrel
  * points — shared between the third-person rig (as part of weaponPivot)
- * and the first-person viewmodel (client/src/render/viewmodel.ts), so the
- * same low-poly rifle silhouette shows up from both views. */
-function buildGunAssembly(gunMaterial: THREE.Material, gunAccentMaterial: THREE.Material): THREE.Group {
+ * and the first-person viewmodel (client/src/render/viewmodel.ts). Each
+ * weapon gets its own silhouette (not just a shared mesh with different
+ * damage numbers): the rifle keeps the original mid-length build, the SMG
+ * is short and stubby with an angled magazine, the shotgun is long and
+ * fat-barreled with a pump foregrip and a tube magazine instead of a box
+ * one — all still flat-shaded low-poly primitives, matching this file's
+ * existing aesthetic. */
+function buildGunAssembly(weaponId: WeaponId, gunMaterial: THREE.Material, gunAccentMaterial: THREE.Material): THREE.Group {
   const gunGroup = new THREE.Group();
-  const body = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.12, 0.5), gunMaterial);
-  gunGroup.add(body);
-  const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.028, 0.32, 6), gunMaterial);
-  barrel.rotation.x = Math.PI / 2;
-  barrel.position.set(0, 0.01, -0.4);
-  gunGroup.add(barrel);
-  const stock = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.11, 0.24), gunAccentMaterial);
-  stock.position.set(0, -0.01, 0.32);
-  gunGroup.add(stock);
-  const magazine = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.22, 0.09), gunAccentMaterial);
-  magazine.position.set(0, -0.15, -0.05);
-  magazine.rotation.x = THREE.MathUtils.degToRad(-15);
-  gunGroup.add(magazine);
+
+  switch (weaponId) {
+    case "smg":
+      addBox(gunGroup, gunMaterial, { x: 0.11, y: 0.13, z: 0.3 }, { x: 0, y: 0, z: 0 });
+      addBarrel(gunGroup, gunMaterial, 0.024, 0.16, { x: 0, y: 0.01, z: -0.28 });
+      addBox(gunGroup, gunAccentMaterial, { x: 0.06, y: 0.09, z: 0.14 }, { x: 0, y: -0.005, z: 0.24 });
+      addBox(gunGroup, gunAccentMaterial, { x: 0.08, y: 0.07, z: 0.1 }, { x: 0, y: -0.08, z: -0.16 });
+      addBox(
+        gunGroup,
+        gunAccentMaterial,
+        { x: 0.06, y: 0.26, z: 0.08 },
+        { x: 0, y: -0.17, z: 0.02 },
+        THREE.MathUtils.degToRad(-28)
+      );
+      break;
+
+    case "shotgun":
+      addBox(gunGroup, gunMaterial, { x: 0.15, y: 0.15, z: 0.32 }, { x: 0, y: 0, z: 0 });
+      addBarrel(gunGroup, gunMaterial, 0.036, 0.42, { x: 0, y: 0.02, z: -0.46 });
+      addBox(gunGroup, gunAccentMaterial, { x: 0.12, y: 0.1, z: 0.16 }, { x: 0, y: -0.04, z: -0.3 });
+      addBarrel(gunGroup, gunMaterial, 0.022, 0.38, { x: 0, y: -0.07, z: -0.42 });
+      addBox(gunGroup, gunAccentMaterial, { x: 0.1, y: 0.12, z: 0.26 }, { x: 0, y: 0, z: 0.32 });
+      break;
+
+    case "rifle":
+    default:
+      addBox(gunGroup, gunMaterial, { x: 0.12, y: 0.12, z: 0.5 }, { x: 0, y: 0, z: 0 });
+      addBarrel(gunGroup, gunMaterial, 0.028, 0.32, { x: 0, y: 0.01, z: -0.4 });
+      addBox(gunGroup, gunAccentMaterial, { x: 0.09, y: 0.11, z: 0.24 }, { x: 0, y: -0.01, z: 0.32 });
+      addBox(
+        gunGroup,
+        gunAccentMaterial,
+        { x: 0.07, y: 0.22, z: 0.09 },
+        { x: 0, y: -0.15, z: -0.05 },
+        THREE.MathUtils.degToRad(-15)
+      );
+      break;
+  }
+
   return gunGroup;
+}
+
+function disposeGunAssembly(assembly: THREE.Group): void {
+  assembly.traverse((obj) => {
+    if (obj instanceof THREE.Mesh) obj.geometry.dispose();
+  });
+}
+
+export interface StandaloneGun {
+  /** Stable wrapper group — attach this to the camera/parent once. Its
+   * child (the actual weapon geometry) gets swapped out wholesale by
+   * setWeapon, so the parent never needs to re-attach anything. */
+  group: THREE.Group;
+  setWeapon(weaponId: WeaponId): void;
+  dispose(): void;
 }
 
 /** Standalone gun mesh (own materials, not tied to a character instance)
  * for the first-person viewmodel — see client/src/render/viewmodel.ts. */
-export function buildStandaloneGun(): { group: THREE.Group; dispose(): void } {
+export function buildStandaloneGun(initialWeapon: WeaponId = "rifle"): StandaloneGun {
   // A small constant emissive keeps the viewmodel readable regardless of
   // which way the scene's one directional light happens to be facing —
   // at first-person range and camera angle, a purely scene-lit dark gun
@@ -113,13 +198,23 @@ export function buildStandaloneGun(): { group: THREE.Group; dispose(): void } {
     emissive: GUN_ACCENT_COLOR,
     emissiveIntensity: 0.5,
   });
-  const group = buildGunAssembly(gunMaterial, gunAccentMaterial);
+  const group = new THREE.Group();
+  let currentWeapon = initialWeapon;
+  let assembly = buildGunAssembly(currentWeapon, gunMaterial, gunAccentMaterial);
+  group.add(assembly);
+
   return {
     group,
+    setWeapon(weaponId: WeaponId): void {
+      if (weaponId === currentWeapon) return;
+      currentWeapon = weaponId;
+      group.remove(assembly);
+      disposeGunAssembly(assembly);
+      assembly = buildGunAssembly(currentWeapon, gunMaterial, gunAccentMaterial);
+      group.add(assembly);
+    },
     dispose(): void {
-      group.traverse((obj) => {
-        if (obj instanceof THREE.Mesh) obj.geometry.dispose();
-      });
+      disposeGunAssembly(assembly);
       gunMaterial.dispose();
       gunAccentMaterial.dispose();
     },
@@ -138,12 +233,21 @@ export interface CharacterModel {
    * to a relaxed idle pose and hides the gun instead of leaving it stuck
    * gripping an invisible weapon. Duel/Target always pass true. */
   setHoldingWeapon(holding: boolean): void;
+  /** Swaps the held weapon's visual mesh (rifle/smg/shotgun each look
+   * different now, not just a shared mesh with different damage numbers).
+   * No-ops if it's already the current weapon. */
+  setWeapon(weaponId: WeaponId): void;
   /** Call once per render frame. aimPitchRad tilts the arm/gun rig up or
    * down independent of body yaw (positive = looking down, matching this
    * game's existing pitch convention); horizontalSpeed (m/s) drives a
    * simple sine-wave leg swing so movement doesn't read as a statue
-   * sliding across the floor. */
-  updateAnimation(dtMs: number, horizontalSpeed: number, aimPitchRad: number): void;
+   * sliding across the floor. isReloading eases the gun into a
+   * dipped/rolled "reloading" pose and back — this rig only ever sees a
+   * boolean (RemotePlayer/Bot have no reload-progress fraction to work
+   * with), so the pose is approached over a fixed duration rather than
+   * synced to the actual reload timer; see Viewmodel for the first-person
+   * version, which does have exact progress and syncs precisely. */
+  updateAnimation(dtMs: number, horizontalSpeed: number, aimPitchRad: number, isReloading?: boolean): void;
   /** Brief white emissive flash across every body part, for hit feedback —
    * replaces the old single-mesh "swap material color" trick now that the
    * visible body is several separate meshes. */
@@ -151,7 +255,7 @@ export interface CharacterModel {
   dispose(): void;
 }
 
-export function buildCharacterModel(initialColor: number): CharacterModel {
+export function buildCharacterModel(initialColor: number, initialWeapon: WeaponId = "rifle"): CharacterModel {
   const root = new THREE.Group();
 
   const bodyMaterial = new THREE.MeshLambertMaterial({ color: initialColor });
@@ -204,9 +308,15 @@ export function buildCharacterModel(initialColor: number): CharacterModel {
     { shoulder: buildArm(-1), side: -1 },
   ];
 
-  const gunGroup = buildGunAssembly(gunMaterial, gunAccentMaterial);
-  gunGroup.position.set(GUN_POSITION.x, GUN_POSITION.y - SHOULDER_Y, GUN_POSITION.z);
-  weaponPivot.add(gunGroup);
+  // gunMount stays put at GUN_POSITION for the lifetime of the character;
+  // the actual weapon geometry (gunAssembly) is a swappable child of it so
+  // setWeapon can rebuild just the mesh without touching this positioning.
+  const gunMount = new THREE.Group();
+  gunMount.position.set(GUN_POSITION.x, GUN_POSITION.y - SHOULDER_Y, GUN_POSITION.z);
+  weaponPivot.add(gunMount);
+  let currentWeapon = initialWeapon;
+  let gunAssembly = buildGunAssembly(currentWeapon, gunMaterial, gunAccentMaterial);
+  gunMount.add(gunAssembly);
   let holdingWeapon = true;
 
   const legPivots: THREE.Group[] = [];
@@ -227,6 +337,7 @@ export function buildCharacterModel(initialColor: number): CharacterModel {
 
   let walkPhase = 0;
   let flashRemainingMs = 0;
+  let reloadPhase = 0; // 0 = rest pose, 1 = fully into the reload pose
 
   return {
     root,
@@ -236,10 +347,20 @@ export function buildCharacterModel(initialColor: number): CharacterModel {
       gloveMaterial.color.setHex(darken(hex, GLOVE_DARKEN));
     },
 
+    setWeapon(weaponId: WeaponId): void {
+      if (weaponId === currentWeapon) return;
+      currentWeapon = weaponId;
+      gunMount.remove(gunAssembly);
+      disposeGunAssembly(gunAssembly);
+      gunAssembly = buildGunAssembly(currentWeapon, gunMaterial, gunAccentMaterial);
+      gunAssembly.visible = holdingWeapon;
+      gunMount.add(gunAssembly);
+    },
+
     setHoldingWeapon(holding: boolean): void {
       if (holding === holdingWeapon) return;
       holdingWeapon = holding;
-      gunGroup.visible = holding;
+      gunAssembly.visible = holding;
       // Idle pose: arms hang straight down at the sides instead of
       // gripping a now-invisible gun.
       for (const { shoulder, side } of arms) {
@@ -247,8 +368,13 @@ export function buildCharacterModel(initialColor: number): CharacterModel {
       }
     },
 
-    updateAnimation(dtMs: number, horizontalSpeed: number, aimPitchRad: number): void {
+    updateAnimation(dtMs: number, horizontalSpeed: number, aimPitchRad: number, isReloading = false): void {
       weaponPivot.rotation.x = aimPitchRad;
+
+      const reloadStep = dtMs / RELOAD_EASE_MS;
+      reloadPhase = isReloading ? Math.min(1, reloadPhase + reloadStep) : Math.max(0, reloadPhase - reloadStep);
+      gunMount.rotation.x = reloadPhase * RELOAD_TILT_X_RAD;
+      gunMount.rotation.z = reloadPhase * RELOAD_ROLL_Z_RAD;
 
       const amplitude = Math.min(1, horizontalSpeed / 4.5) * WALK_SWING_MAX_RAD;
       walkPhase += (dtMs / 1000) * WALK_CYCLE_SPEED * Math.min(1, horizontalSpeed / 2.5 + 0.15);

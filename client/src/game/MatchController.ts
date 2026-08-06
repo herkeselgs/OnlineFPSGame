@@ -86,11 +86,12 @@ export class MatchController {
 
     this.tracers.update(frameDt * 1000);
     this.muzzleFlash.update(frameDt * 1000);
-    this.viewmodel.update(frameDt * 1000);
+    const w = this.prediction.weapon;
+    this.viewmodel.setWeapon(w.currentId);
+    this.viewmodel.update(frameDt * 1000, w.isReloading, w.reloadProgress);
     this.shake.update(frameDt);
     this.hud.update(frameDt * 1000);
 
-    const w = this.prediction.weapon;
     this.hud.updateWeapon(w.current.name, w.currentAmmo, w.current.magazineSize, w.isReloading);
     this.hud.updateHealth(this.prediction.combat.health);
     this.hud.updatePing(this.prediction.rttEstimate);
@@ -182,7 +183,8 @@ export class MatchController {
         p.weapon,
         p.color,
         p.kills,
-        p.deaths
+        p.deaths,
+        p.reloading
       );
     }
   }

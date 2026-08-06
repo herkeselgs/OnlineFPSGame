@@ -74,7 +74,8 @@ export class CombatSystem {
     for (const t of this.targets) t.update(dtMs);
     this.tracers.update(dtMs);
     this.muzzleFlash.update(dtMs);
-    this.viewmodel.update(dtMs);
+    this.viewmodel.setWeapon(this.weapon.currentId);
+    this.viewmodel.update(dtMs, this.weapon.isReloading, this.weapon.reloadProgress);
     this.shake.update(dt);
 
     for (const [code, id] of Object.entries(SWITCH_KEYS)) {
