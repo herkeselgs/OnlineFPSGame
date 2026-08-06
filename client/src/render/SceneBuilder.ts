@@ -3,6 +3,7 @@ import * as THREE from "three";
 import { applyBastionTheme } from "./BastionDetails";
 import { applyFoundryTheme } from "./FoundryDetails";
 import { applyOutpostTheme } from "./OutpostDetails";
+import { buildSky } from "./skybox";
 
 export interface BuiltMapScene {
   meshes: THREE.Mesh[];
@@ -29,14 +30,15 @@ const MAP_THEMES: Record<string, (scene: THREE.Scene, meshes: THREE.Mesh[]) => {
  * lights from the previous map.
  */
 export function buildMapScene(scene: THREE.Scene, map: MapDefinition): BuiltMapScene {
-  scene.background = new THREE.Color(map.skyColor);
+  const sky = buildSky(map.id);
+  scene.background = sky.texture;
   scene.fog = new THREE.FogExp2(map.fogColor, map.fogDensity);
 
   const hemi = new THREE.HemisphereLight(0xffffff, 0x404050, map.ambientIntensity);
   scene.add(hemi);
 
-  const sun = new THREE.DirectionalLight(0xffffff, 1.1);
-  sun.position.set(30, 45, 20);
+  const sun = new THREE.DirectionalLight(sky.sunColor, sky.sunIntensity);
+  sun.position.copy(sky.sunDirection).multiplyScalar(50);
   sun.castShadow = false; // deliberately off — real-time shadows tank Chromebook GPUs
   scene.add(sun);
 
@@ -112,6 +114,7 @@ export function buildMapScene(scene: THREE.Scene, map: MapDefinition): BuiltMapS
   return {
     meshes,
     dispose() {
+      sky.dispose();
       scene.remove(hemi);
       scene.remove(sun);
       for (const mesh of meshes) scene.remove(mesh);

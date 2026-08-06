@@ -84,6 +84,13 @@ volumeSlider.addEventListener("input", () => {
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
+// ACES Filmic gives the gradient sky (see render/skybox.ts) and the
+// flat-Lambert map geometry richer contrast than the default linear output
+// — same reason most three.js scenes with any kind of sky/lighting setup
+// enable it. Cheap (a standard per-pixel post-process), not tied to any
+// particular shader.
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(90, window.innerWidth / window.innerHeight, 0.05, 200);

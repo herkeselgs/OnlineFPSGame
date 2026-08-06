@@ -169,7 +169,7 @@ export const OUTPOST: MapDefinition = {
   skyColor: 0x3d5560,
   fogColor: 0x4a6670,
   fogDensity: 0.014,
-  ambientIntensity: 0.6,
+  ambientIntensity: 1.0,
   blocks: [
     // Perimeter walls (same corner-overlap technique as the other maps)
     box("wall", 0x5c7480, { x: 0, y: 2, z: -14 }, { x: 20.5, y: 2, z: 0.5 }),
