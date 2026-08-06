@@ -6,6 +6,7 @@ import {
   PlayerPhysicsState,
   PositionHistory,
   SequenceKey,
+  STAMINA_MAX,
 } from "@fps/shared";
 import { randomUUID } from "node:crypto";
 import { WebSocket } from "ws";
@@ -89,7 +90,14 @@ export function createImpostorPlayerSession(id: PlayerId, ws: WebSocket, name: s
     ready: false,
     connected: true,
     reconnectToken: randomUUID(),
-    physics: { position: { x: 0, y: 0, z: 0 }, velocity: { x: 0, y: 0, z: 0 }, onGround: false, crouching: false },
+    physics: {
+      position: { x: 0, y: 0, z: 0 },
+      velocity: { x: 0, y: 0, z: 0 },
+      onGround: false,
+      crouching: false,
+      stamina: STAMINA_MAX,
+      staminaRegenCooldownMs: 0,
+    },
     yaw: 0,
     pitch: 0,
     inputQueue: [],

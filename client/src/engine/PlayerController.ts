@@ -1,4 +1,4 @@
-import { BoxCollider, eyeHeightOffset, PlayerPhysicsState, SIM_DT, SpawnPoint, stepPlayerMovement } from "@fps/shared";
+import { BoxCollider, eyeHeightOffset, PlayerPhysicsState, SIM_DT, SpawnPoint, STAMINA_MAX, stepPlayerMovement } from "@fps/shared";
 import { InputManager } from "./InputManager";
 
 const MAX_PITCH = Math.PI / 2 - 0.01;
@@ -29,6 +29,8 @@ export class PlayerController {
       velocity: { x: 0, y: 0, z: 0 },
       onGround: false,
       crouching: false,
+      stamina: STAMINA_MAX,
+      staminaRegenCooldownMs: 0,
     };
     this.yaw = spawn.yaw;
   }

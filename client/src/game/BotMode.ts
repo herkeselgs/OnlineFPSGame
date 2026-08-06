@@ -12,6 +12,8 @@ import {
   resolvePlayerHit,
   respawn,
   RESPAWN_TIME_MS,
+  STAMINA_LOW_THRESHOLD,
+  STAMINA_MAX,
   Vec3,
   WEAPONS,
   WeaponState,
@@ -140,6 +142,7 @@ export class BotMode {
     this.hud.updateWeapon(this.weapon.current.name, this.weapon.currentAmmo, this.weapon.current.magazineSize, this.weapon.isReloading);
     this.hud.updateHealth(this.playerCombat.health);
     this.hud.updateSpawnProtection(this.playerCombat.spawnProtectedUntil - nowMs);
+    this.hud.updateStamina(this.player.state.stamina, STAMINA_MAX, this.player.state.stamina < STAMINA_LOW_THRESHOLD);
 
     if (this.playerCombat.health < this.lastHealth) {
       this.hud.flashDamage();
@@ -155,7 +158,14 @@ export class BotMode {
 
     if (!this.playerCombat.alive && nowMs - this.localDeathAtMs >= RESPAWN_TIME_MS) {
       respawn(this.playerCombat, nowMs);
-      this.player.state = { position: { ...this.playerSpawnPosition }, velocity: { x: 0, y: 0, z: 0 }, onGround: false, crouching: false };
+      this.player.state = {
+        position: { ...this.playerSpawnPosition },
+        velocity: { x: 0, y: 0, z: 0 },
+        onGround: false,
+        crouching: false,
+        stamina: STAMINA_MAX,
+        staminaRegenCooldownMs: 0,
+      };
       this.player.yaw = this.playerSpawnYaw;
       this.player.pitch = 0;
     }

@@ -46,9 +46,31 @@ export const STEP_HEIGHT = 0.55;
 
 // --- Sprint ---
 /** Forward-biased hold-to-sprint (see PlayerInputTick.sprint) multiplies
- * MOVE_SPEED while grounded, not crouching, and moving mostly forward — no
- * stamina meter, this is a movement-skill layer, not a resource to manage. */
+ * MOVE_SPEED while grounded, not crouching, and moving mostly forward — gated
+ * by the stamina meter below, which scales the multiplier down as stamina
+ * runs low instead of an all-or-nothing cutoff. */
 export const SPRINT_SPEED_MULTIPLIER = 1.5;
+
+// --- Stamina ---
+/** Full-to-empty sprinting continuously drains this in STAMINA_MAX /
+ * STAMINA_DRAIN_PER_SECOND seconds (5s at these values) — long enough to
+ * cross open ground, short enough that sprinting everywhere isn't free. */
+export const STAMINA_MAX = 100;
+export const STAMINA_DRAIN_PER_SECOND = 20;
+/** Refill rate once regen kicks in (see STAMINA_REGEN_DELAY_MS) — slower
+ * than drain so stamina management is a real tradeoff, not a non-decision. */
+export const STAMINA_REGEN_PER_SECOND = 12;
+/** Regen only resumes this long after the player last actually drained
+ * stamina (releasing sprint for a single tick doesn't instantly refill) —
+ * tracked as its own piece of deterministic state (see
+ * PlayerPhysicsState.staminaRegenCooldownMs) since, like crouching, it has
+ * to round-trip through reconciliation/snapshots exactly. */
+export const STAMINA_REGEN_DELAY_MS = 700;
+/** Below this stamina level, the sprint speed bonus scales down linearly —
+ * from the full SPRINT_SPEED_MULTIPLIER at this threshold down to no bonus
+ * at all (plain MOVE_SPEED) right as stamina bottoms out at zero, i.e. a
+ * winded player never actually stops, they just lose their speed edge. */
+export const STAMINA_LOW_THRESHOLD = 35;
 
 // --- Crouch ---
 /** Collider height while crouched (vs PLAYER_HEIGHT's 1.8m) — the box

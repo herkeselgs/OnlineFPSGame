@@ -6,6 +6,7 @@ import {
   PlayerPhysicsState,
   SIM_DT,
   SpawnPoint,
+  STAMINA_MAX,
   stepPlayerMovement,
 } from "@fps/shared";
 import * as THREE from "three";
@@ -42,7 +43,14 @@ export class ImpostorPredictionController {
     private camera: THREE.PerspectiveCamera,
     private ladders: readonly BoxCollider[] = []
   ) {
-    this.physics = { position: { ...spawn.position }, velocity: { x: 0, y: 0, z: 0 }, onGround: false, crouching: false };
+    this.physics = {
+      position: { ...spawn.position },
+      velocity: { x: 0, y: 0, z: 0 },
+      onGround: false,
+      crouching: false,
+      stamina: STAMINA_MAX,
+      staminaRegenCooldownMs: 0,
+    };
     this.yaw = spawn.yaw;
   }
 
@@ -120,7 +128,17 @@ export class ImpostorPredictionController {
 
   applyServerSnapshot(entry: ImpostorPlayerSnapshot): void {
     this.pendingInputs = this.pendingInputs.filter((i) => i.seq > entry.lastProcessedSeq);
-    this.physics = { position: entry.position, velocity: entry.velocity, onGround: entry.onGround, crouching: entry.crouching };
+    // ImpostorPlayerSnapshot never grew a stamina field (this mode is being
+    // fully removed shortly — see the task list), so just reset to full
+    // rather than threading it through this soon-to-be-deleted wire shape.
+    this.physics = {
+      position: entry.position,
+      velocity: entry.velocity,
+      onGround: entry.onGround,
+      crouching: entry.crouching,
+      stamina: STAMINA_MAX,
+      staminaRegenCooldownMs: 0,
+    };
     for (const replayInput of this.pendingInputs) {
       this.physics = stepPlayerMovement(
         this.physics,

@@ -29,6 +29,7 @@ import {
   SEQUENCE_KEYS,
   SIM_HZ,
   SNAPSHOT_HZ,
+  STAMINA_MAX,
   stepPlayerMovement,
   TaskStationDef,
   TASKS_PER_PLAYER,
@@ -421,7 +422,14 @@ export class ImpostorRoom {
    * allowed more (it can't; applyConfig caps maxPlayers there too). */
   private assignSpawn(session: ImpostorPlayerSession, spawnIndex: number): void {
     const spawn = this.map.spawns[spawnIndex % this.map.spawns.length];
-    session.physics = { position: { ...spawn.position }, velocity: { x: 0, y: 0, z: 0 }, onGround: false, crouching: false };
+    session.physics = {
+      position: { ...spawn.position },
+      velocity: { x: 0, y: 0, z: 0 },
+      onGround: false,
+      crouching: false,
+      stamina: STAMINA_MAX,
+      staminaRegenCooldownMs: 0,
+    };
     session.yaw = spawn.yaw;
     session.pitch = 0;
   }

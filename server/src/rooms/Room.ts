@@ -25,6 +25,7 @@ import {
   ServerMessage,
   SIM_HZ,
   SNAPSHOT_HZ,
+  STAMINA_MAX,
   stepPlayerMovement,
   Vec3,
   WeaponDef,
@@ -276,7 +277,14 @@ export class Room {
     for (const [id, session] of this.players) {
       const spawnIndex = this.spawnIndexByPlayer.get(id) ?? 0;
       const spawn = this.map.spawns[spawnIndex];
-      session.physics = { position: { ...spawn.position }, velocity: { x: 0, y: 0, z: 0 }, onGround: false, crouching: false };
+      session.physics = {
+        position: { ...spawn.position },
+        velocity: { x: 0, y: 0, z: 0 },
+        onGround: false,
+        crouching: false,
+        stamina: STAMINA_MAX,
+        staminaRegenCooldownMs: 0,
+      };
       session.yaw = spawn.yaw;
       session.pitch = 0;
       session.combat = createPlayerCombatState();
@@ -499,6 +507,8 @@ export class Room {
       pitch: p.pitch,
       onGround: p.physics.onGround,
       crouching: p.physics.crouching,
+      stamina: p.physics.stamina,
+      staminaRegenCooldownMs: p.physics.staminaRegenCooldownMs,
       health: p.combat.health,
       alive: p.combat.alive,
       spawnProtectedUntil: p.combat.spawnProtectedUntil,

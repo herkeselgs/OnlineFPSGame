@@ -66,6 +66,8 @@ export interface PlayerSnapshot {
   pitch: number;
   onGround: boolean;
   crouching: boolean;
+  stamina: number;
+  staminaRegenCooldownMs: number;
   health: number;
   alive: boolean;
   spawnProtectedUntil: number;

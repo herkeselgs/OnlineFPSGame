@@ -7,6 +7,8 @@ import {
   RESPAWN_TIME_MS,
   ServerMessage,
   SpawnPoint,
+  STAMINA_LOW_THRESHOLD,
+  STAMINA_MAX,
   Vec3,
 } from "@fps/shared";
 import * as THREE from "three";
@@ -96,6 +98,7 @@ export class MatchController {
     this.hud.updateHealth(this.prediction.combat.health);
     this.hud.updatePing(this.prediction.rttEstimate);
     this.hud.updateSpawnProtection(this.prediction.combat.spawnProtectedUntil - this.clock.estimateServerTime());
+    this.hud.updateStamina(this.prediction.physics.stamina, STAMINA_MAX, this.prediction.physics.stamina < STAMINA_LOW_THRESHOLD);
 
     if (this.prediction.combat.health < this.lastHealth) {
       this.hud.flashDamage();

@@ -14,6 +14,7 @@ import {
   respawn,
   SIM_DT,
   SpawnPoint,
+  STAMINA_MAX,
   stepPlayerMovement,
   Vec3,
   WeaponState,
@@ -94,7 +95,7 @@ export class Bot {
   ) {
     this.spawnPosition = { ...spawn.position };
     this.spawnYaw = spawn.yaw;
-    this.physics = { position: { ...spawn.position }, velocity: { x: 0, y: 0, z: 0 }, onGround: false, crouching: false };
+    this.physics = { position: { ...spawn.position }, velocity: { x: 0, y: 0, z: 0 }, onGround: false, crouching: false, stamina: STAMINA_MAX, staminaRegenCooldownMs: 0 };
     this.yaw = spawn.yaw;
 
     this.geometry = new THREE.CapsuleGeometry(0.35, 1.0, 4, 8);
@@ -295,7 +296,7 @@ export class Bot {
 
   respawnAt(nowMs: number): void {
     respawn(this.combat, nowMs);
-    this.physics = { position: { ...this.spawnPosition }, velocity: { x: 0, y: 0, z: 0 }, onGround: false, crouching: false };
+    this.physics = { position: { ...this.spawnPosition }, velocity: { x: 0, y: 0, z: 0 }, onGround: false, crouching: false, stamina: STAMINA_MAX, staminaRegenCooldownMs: 0 };
     this.yaw = this.spawnYaw;
     for (const m of this.raycastMeshes) m.visible = true;
     this.positionHitboxes();

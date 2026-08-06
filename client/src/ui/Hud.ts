@@ -23,6 +23,8 @@ export class Hud {
   private crosshairEl = document.getElementById("crosshair") as HTMLDivElement;
   private healthWrapEl = document.getElementById("hud-health-wrap") as HTMLDivElement;
   private weaponHudEl = document.getElementById("weapon-hud") as HTMLDivElement;
+  private staminaWrapEl = document.getElementById("hud-stamina-wrap") as HTMLDivElement;
+  private staminaFillEl = document.getElementById("hud-stamina-fill") as HTMLDivElement;
 
   private hitmarkerRemainingMs = 0;
   private damageFlashRemainingMs = 0;
@@ -38,6 +40,16 @@ export class Hud {
 
   updateHealth(health: number): void {
     this.healthEl.textContent = String(Math.max(0, Math.round(health)));
+  }
+
+  /** `stamina`/`max` in the same units as PlayerPhysicsState.stamina;
+   * `low` toggles the warning color — pass true at/below
+   * STAMINA_LOW_THRESHOLD, the same point sprint speed starts tapering off,
+   * so the color explains the speed change. */
+  updateStamina(stamina: number, max: number, low: boolean): void {
+    const pct = Math.max(0, Math.min(1, stamina / max));
+    this.staminaFillEl.style.width = `${pct * 100}%`;
+    this.staminaFillEl.classList.toggle("stamina-low", low);
   }
 
   setDead(dead: boolean, respawnInMs: number): void {
@@ -126,6 +138,7 @@ export class Hud {
     this.crosshairEl.style.display = "none";
     this.healthWrapEl.style.display = "none";
     this.weaponHudEl.style.display = "none";
+    this.staminaWrapEl.style.display = "none";
     this.damageDirRemainingMs = 0;
     this.damageDirEl.style.opacity = "0";
     this.setDead(false, 0);
@@ -137,6 +150,7 @@ export class Hud {
     this.crosshairEl.style.display = "block";
     this.healthWrapEl.style.display = "flex";
     this.weaponHudEl.style.display = "block";
+    this.staminaWrapEl.style.display = "block";
   }
 
   /** Shown both when the local connection drops and when the opponent's

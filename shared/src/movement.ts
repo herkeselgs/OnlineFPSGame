@@ -17,6 +17,11 @@ import {
   SLIDE_FRICTION,
   SLIDE_MIN_SPEED,
   SPRINT_SPEED_MULTIPLIER,
+  STAMINA_DRAIN_PER_SECOND,
+  STAMINA_LOW_THRESHOLD,
+  STAMINA_MAX,
+  STAMINA_REGEN_DELAY_MS,
+  STAMINA_REGEN_PER_SECOND,
   STEP_HEIGHT,
 } from "./constants.js";
 import { Vec3 } from "./vec.js";
@@ -25,12 +30,17 @@ import { Vec3 } from "./vec.js";
  * `crouching` is part of the deterministic simulation state (not derived
  * from input alone) because standing back up can be blocked by low
  * ceilings — see stepPlayerMovement — so it has to round-trip through
- * reconciliation/snapshots exactly like onGround does. */
+ * reconciliation/snapshots exactly like onGround does. `stamina` and
+ * `staminaRegenCooldownMs` are here for the same reason: they evolve every
+ * tick from drain/regen rules, not directly from input, so replay during
+ * reconciliation has to start from the server's real values. */
 export interface PlayerPhysicsState {
   position: Vec3;
   velocity: Vec3;
   onGround: boolean;
   crouching: boolean;
+  stamina: number;
+  staminaRegenCooldownMs: number;
 }
 
 /** One tick of player input. Movement axes are in the -1..1 range, already
@@ -167,12 +177,41 @@ export function stepPlayerMovement(
   const wishDirX = wishLenSq > 1e-8 ? wishX / Math.sqrt(wishLenSq) : 0;
   const wishDirZ = wishLenSq > 1e-8 ? wishZ / Math.sqrt(wishLenSq) : 0;
 
+  // Sprinting only actually applies (and only drains stamina) grounded,
+  // not crouching/sliding, not climbing (a ladder isn't running), and
+  // forward-biased — matches the old unconditional sprint check exactly,
+  // just gated by stamina too now.
+  const wantsSprint = !crouching && !climbing && grounded && input.sprint && input.forward > 0.1;
+  let stamina = state.stamina;
+  let staminaRegenCooldownMs = state.staminaRegenCooldownMs;
+  const sprinting = wantsSprint && stamina > 0;
+  if (sprinting) {
+    stamina = Math.max(0, stamina - STAMINA_DRAIN_PER_SECOND * dt);
+    staminaRegenCooldownMs = STAMINA_REGEN_DELAY_MS;
+  } else if (wantsSprint) {
+    // Still holding sprint but stamina just hit zero — keep the regen delay
+    // pinned so it can't start creeping back up (and immediately get
+    // redrained the instant it ticks above zero) while the key's still
+    // held. Regen only actually starts once the player lets go.
+    staminaRegenCooldownMs = STAMINA_REGEN_DELAY_MS;
+  } else if (staminaRegenCooldownMs > 0) {
+    staminaRegenCooldownMs = Math.max(0, staminaRegenCooldownMs - dt * 1000);
+  } else {
+    stamina = Math.min(STAMINA_MAX, stamina + STAMINA_REGEN_PER_SECOND * dt);
+  }
+
   // Grounded top speed for this tick's stance: crouched is slower, sprint
   // (forward-biased, and only while neither crouching nor airborne) is
-  // faster, plain walk otherwise. Air control is unaffected by stance.
+  // faster, plain walk otherwise. Air control is unaffected by stance. The
+  // sprint bonus itself scales down as stamina drops below the low
+  // threshold, reaching no bonus at all (plain walk speed) right as stamina
+  // bottoms out — a winded player slows down, they don't hard-stop.
   let groundSpeed = MOVE_SPEED;
   if (crouching) groundSpeed = MOVE_SPEED * CROUCH_SPEED_MULTIPLIER;
-  else if (input.sprint && input.forward > 0.1) groundSpeed = MOVE_SPEED * SPRINT_SPEED_MULTIPLIER;
+  else if (sprinting) {
+    const staminaFactor = Math.min(1, stamina / STAMINA_LOW_THRESHOLD);
+    groundSpeed = MOVE_SPEED * (1 + (SPRINT_SPEED_MULTIPLIER - 1) * staminaFactor);
+  }
 
   // Sliding is a pure function of velocity + stance each tick (crouching,
   // grounded, and still carrying sprint-or-faster speed from before the
@@ -298,5 +337,5 @@ export function stepPlayerMovement(
     onGround = false;
   }
 
-  return { position, velocity, onGround, crouching };
+  return { position, velocity, onGround, crouching, stamina, staminaRegenCooldownMs };
 }

@@ -8,6 +8,7 @@ import {
   PlayerSnapshot,
   SIM_DT,
   SpawnPoint,
+  STAMINA_MAX,
   stepPlayerMovement,
   WeaponDef,
   WeaponId,
@@ -71,7 +72,14 @@ export class PredictionController {
     private camera: THREE.PerspectiveCamera,
     private ladders: readonly BoxCollider[] = []
   ) {
-    this.physics = { position: { ...spawn.position }, velocity: { x: 0, y: 0, z: 0 }, onGround: false, crouching: false };
+    this.physics = {
+      position: { ...spawn.position },
+      velocity: { x: 0, y: 0, z: 0 },
+      onGround: false,
+      crouching: false,
+      stamina: STAMINA_MAX,
+      staminaRegenCooldownMs: 0,
+    };
     this.yaw = spawn.yaw;
   }
 
@@ -241,7 +249,14 @@ export class PredictionController {
     this.combat.deaths = entry.deaths;
     this.weapon.syncFromServer(entry.weapon, entry.ammo, entry.reloading);
 
-    this.physics = { position: entry.position, velocity: entry.velocity, onGround: entry.onGround, crouching: entry.crouching };
+    this.physics = {
+      position: entry.position,
+      velocity: entry.velocity,
+      onGround: entry.onGround,
+      crouching: entry.crouching,
+      stamina: entry.stamina,
+      staminaRegenCooldownMs: entry.staminaRegenCooldownMs,
+    };
     if (this.combat.alive) {
       for (const replayInput of this.pendingInputs) {
         this.physics = stepPlayerMovement(

@@ -1,4 +1,4 @@
-import { MapDefinition } from "@fps/shared";
+import { MapDefinition, STAMINA_LOW_THRESHOLD, STAMINA_MAX } from "@fps/shared";
 import * as THREE from "three";
 import { soundEngine } from "../audio/SoundEngine";
 import { CombatSystem } from "../combat/CombatSystem";
@@ -61,6 +61,7 @@ export class PracticeMode {
     this.hud.update(frameDt * 1000);
     const w = this.combat.weapon;
     this.hud.updateWeapon(w.current.name, w.currentAmmo, w.current.magazineSize, w.isReloading);
+    this.hud.updateStamina(this.player.state.stamina, STAMINA_MAX, this.player.state.stamina < STAMINA_LOW_THRESHOLD);
   }
 
   getShakeOffset(): { yaw: number; pitch: number; roll: number } {
