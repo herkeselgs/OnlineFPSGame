@@ -110,11 +110,6 @@
         <div class="cosmetic-label">Color <span id="cosmetic-name"></span></div>
         <div id="cosmetic-select" class="cosmetic-select"></div>
 
-        <div class="mode-tabs">
-          <button id="mode-tab-duel" type="button" class="mode-tab mode-tab-active">Duel</button>
-          <button id="mode-tab-impostor" type="button" class="mode-tab">Imposter</button>
-        </div>
-
         <div id="duel-mode-panel">
           <button id="btn-create-room" class="btn-primary">Create Room</button>
 
@@ -146,16 +141,6 @@
             </select>
           </label>
           <button id="btn-play-bot" class="btn-secondary">Play vs Computer</button>
-        </div>
-
-        <div id="impostor-mode-panel" class="hidden">
-          <p class="subtitle">4-10 players, real first-person combat with social deduction</p>
-          <button id="btn-create-impostor-room" class="btn-primary">Create Room</button>
-
-          <div class="join-row">
-            <input id="join-impostor-code-input" type="text" maxlength="5" placeholder="CODE" class="code-input" />
-            <button id="btn-join-impostor-room" class="btn-primary">Join</button>
-          </div>
         </div>
 
         <button id="btn-open-stats" class="btn-secondary">Stats &amp; Match History</button>
@@ -204,95 +189,6 @@
         <button id="btn-bot-results-menu" class="btn-secondary">Back to Menu</button>
       </div>
     </div>
-
-    <div id="screen-impostor-lobby" class="screen hidden">
-      <div class="screen-panel">
-        <h1>Room <span id="imp-lobby-code" class="lobby-code-text"></span></h1>
-        <p class="subtitle">Share this code — 4 to 10 players</p>
-        <div class="share-row">
-          <input id="imp-share-link" type="text" readonly class="code-input" />
-          <button id="btn-imp-copy-link" class="btn-secondary">Copy</button>
-        </div>
-
-        <div id="imp-host-config" class="imp-host-config hidden">
-          <label class="row">
-            <span>Min players</span>
-            <select id="imp-min-players"></select>
-          </label>
-          <label class="row">
-            <span>Max players</span>
-            <select id="imp-max-players"></select>
-          </label>
-          <label class="row">
-            <span>Imposters</span>
-            <select id="imp-imposter-count"></select>
-          </label>
-        </div>
-        <div id="imp-config-readonly" class="imp-config-readonly hidden"></div>
-
-        <div id="imp-lobby-players" class="lobby-players"></div>
-
-        <button id="btn-imp-ready" class="btn-primary">Ready</button>
-        <button id="btn-imp-leave-lobby" class="btn-secondary">Leave Room</button>
-      </div>
-    </div>
-
-    <div id="screen-impostor-countdown" class="screen hidden">
-      <div class="countdown-number" id="imp-countdown-number">3</div>
-    </div>
-
-    <div id="imp-role-banner" class="imp-role-banner hidden">
-      <div id="imp-role-text" class="imp-role-text"></div>
-      <div id="imp-fellow-imposters" class="imp-fellow-imposters"></div>
-    </div>
-
-    <div id="imp-match-result-banner" class="imp-match-result-banner hidden">
-      <div id="imp-match-result-text"></div>
-    </div>
-
-    <div id="imp-task-checklist" class="imp-task-checklist hidden"></div>
-    <div id="imp-task-aggregate" class="imp-task-aggregate hidden"></div>
-
-    <div id="imp-task-prompt" class="imp-task-prompt hidden">
-      <div id="imp-task-prompt-text" class="imp-task-prompt-text"></div>
-      <div id="imp-task-progress-bar" class="imp-task-progress-bar hidden">
-        <div id="imp-task-progress-fill" class="imp-task-progress-fill"></div>
-      </div>
-      <div id="imp-task-sequence" class="imp-task-sequence hidden"></div>
-    </div>
-
-    <button id="btn-imp-call-meeting" class="btn-secondary imp-call-meeting-btn hidden">
-      Call Emergency Meeting (<span id="imp-meeting-remaining">1</span>)
-    </button>
-
-    <div id="screen-impostor-meeting" class="screen hidden">
-      <div class="screen-panel">
-        <h1 id="imp-meeting-title">Emergency Meeting</h1>
-        <div id="imp-meeting-timer" class="imp-meeting-timer"></div>
-
-        <div id="imp-meeting-discussion" class="imp-meeting-discussion">
-          <p class="subtitle">Discuss who you think the imposter is. Voting starts when the timer runs out.</p>
-        </div>
-
-        <div id="imp-meeting-voting" class="imp-meeting-voting hidden">
-          <div id="imp-vote-list" class="imp-vote-list"></div>
-        </div>
-
-        <div id="imp-meeting-result" class="imp-meeting-result hidden">
-          <div id="imp-meeting-result-text"></div>
-        </div>
-      </div>
-    </div>
-
-    <div id="imp-ejected-overlay" class="imp-ejected-overlay hidden">
-      <div>You were ejected.</div>
-    </div>
-
-    <div id="imp-killed-overlay" class="imp-ejected-overlay hidden">
-      <div>You were killed.</div>
-    </div>
-
-    <div id="imp-kill-cooldown" class="imp-kill-cooldown hidden"></div>
 
     <div id="screen-stats" class="screen hidden">
       <div class="screen-panel stats-panel">

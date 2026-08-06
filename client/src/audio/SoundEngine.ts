@@ -126,25 +126,6 @@ export class SoundEngine {
     this.tone({ freq: isGo ? 920 : 600, duration: isGo ? 0.22 : 0.09, gain: 0.3, type: "sine" });
   }
 
-  /** Imposter mode's kill sound — the only positional audio in the game.
-   * pan is -1 (hard left) to 1 (hard right), volumeMul is a 0..1 distance
-   * falloff; both are computed by the caller from world positions (see
-   * ImpostorMatchController), this just routes the existing heavy-shot
-   * synthesis through a StereoPannerNode instead of straight to master. A
-   * full 3D PannerNode would be overkill for "roughly tell direction and
-   * distance," which is all the design calls for. */
-  playPositionalGunshot(pan: number, volumeMul: number): void {
-    if (!this.ready()) return;
-    const ctx = this.ctx!;
-    const panner = ctx.createStereoPanner();
-    panner.pan.value = Math.max(-1, Math.min(1, pan));
-    panner.connect(this.master!);
-
-    const mul = Math.max(0, Math.min(1, volumeMul));
-    this.noiseBurst({ freq: 550, q: 0.5, type: "lowpass", duration: 0.22, gain: 0.7 * mul }, panner);
-    this.tone({ freq: 90, freqEnd: 45, duration: 0.2, gain: 0.5 * mul, type: "sine" }, panner);
-  }
-
   startAmbient(): void {
     if (!this.ready() || this.ambientNodes) return;
     const ctx = this.ctx!;
@@ -198,16 +179,7 @@ export class SoundEngine {
     return buffer;
   }
 
-  private noiseBurst(
-    opts: {
-      freq: number;
-      q: number;
-      type: BiquadFilterType;
-      duration: number;
-      gain: number;
-    },
-    dest?: AudioNode
-  ): void {
+  private noiseBurst(opts: { freq: number; q: number; type: BiquadFilterType; duration: number; gain: number }): void {
     const ctx = this.ctx!;
     const src = ctx.createBufferSource();
     src.buffer = this.noiseBuffer;
@@ -224,22 +196,19 @@ export class SoundEngine {
 
     src.connect(filter);
     filter.connect(gain);
-    gain.connect(dest ?? this.master!);
+    gain.connect(this.master!);
     src.start(now);
     src.stop(now + opts.duration + 0.02);
   }
 
-  private tone(
-    opts: {
-      freq: number;
-      freqEnd?: number;
-      duration: number;
-      gain: number;
-      type: OscillatorType;
-      delaySec?: number;
-    },
-    dest?: AudioNode
-  ): void {
+  private tone(opts: {
+    freq: number;
+    freqEnd?: number;
+    duration: number;
+    gain: number;
+    type: OscillatorType;
+    delaySec?: number;
+  }): void {
     const ctx = this.ctx!;
     const osc = ctx.createOscillator();
     osc.type = opts.type;
@@ -254,7 +223,7 @@ export class SoundEngine {
     gain.gain.exponentialRampToValueAtTime(0.001, now + opts.duration);
 
     osc.connect(gain);
-    gain.connect(dest ?? this.master!);
+    gain.connect(this.master!);
     osc.start(now);
     osc.stop(now + opts.duration + 0.02);
   }

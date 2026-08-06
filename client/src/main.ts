@@ -1,13 +1,11 @@
-import { DEFAULT_MAP_ID, IMPOSTOR_MAPS, MapDefinition, MAPS } from "@fps/shared";
+import { DEFAULT_MAP_ID, MapDefinition, MAPS } from "@fps/shared";
 import * as THREE from "three";
 import { soundEngine } from "./audio/SoundEngine";
 import { InputManager } from "./engine/InputManager";
 import { BotMatchResult, BotMode } from "./game/BotMode";
 import { BOT_DIFFICULTIES, BotDifficultyLevel, DEFAULT_BOT_DIFFICULTY } from "./game/botDifficulty";
-import { ImpostorMatchController } from "./game/ImpostorMatchController";
 import { MatchController } from "./game/MatchController";
 import { PracticeMode } from "./game/PracticeMode";
-import { ImpostorFlow } from "./net/ImpostorFlow";
 import { MultiplayerFlow } from "./net/MultiplayerFlow";
 import { buildMapScene, BuiltMapScene } from "./render/SceneBuilder";
 import { settingsStore } from "./state/settings";
@@ -102,12 +100,8 @@ scene.add(camera);
 // match may use a different map, so nothing is built once-and-reused here.
 let currentBuilt: BuiltMapScene | null = null;
 
-// Checks both mode's map registries (Duel's MAPS and Imposter's IMPOSTOR_MAPS)
-// rather than a single one — this function is shared by both flow classes,
-// each of which only ever passes an id from its own mode's registry, so the
-// combined lookup never causes cross-mode ambiguity in practice.
 function loadMap(mapId: string): { map: MapDefinition; meshes: THREE.Mesh[] } {
-  const map = MAPS[mapId] ?? IMPOSTOR_MAPS[mapId] ?? MAPS[DEFAULT_MAP_ID];
+  const map = MAPS[mapId] ?? MAPS[DEFAULT_MAP_ID];
   if (currentBuilt) currentBuilt.dispose();
   currentBuilt = buildMapScene(scene, map);
   return { map, meshes: currentBuilt.meshes };
@@ -217,45 +211,10 @@ const multiplayer = new MultiplayerFlow(scene, camera, input, hud, loadMap, (mat
   }
 });
 
-const impostorFlow = new ImpostorFlow(scene, camera, input, loadMap, (match: ImpostorMatchController | null) => {
-  stopPractice();
-  stopBotMode();
-  activeMode = match;
-  if (match) {
-    // Imposter mode has no health/ammo/weapon of its own (crewmates are
-    // unarmed) — without this, Duel's HUD elements are CSS-visible by
-    // default from page load and only ever masked by whichever `.screen`
-    // covers the viewport, so stale/default Duel HUD content (100 health,
-    // 24/24 Rifle) shows through the instant live Imposter gameplay starts
-    // with no screen covering it.
-    hud.hideMatchInfo();
-    lockOverlay.classList.add("hidden");
-  }
-});
-
 new ProgressionUI(
   () => multiplayer.showMenu(),
   () => multiplayer.hideAllScreens()
 );
-
-// --- Main menu mode tabs (Duel <-> Imposter) ---
-const modeTabDuel = document.getElementById("mode-tab-duel") as HTMLButtonElement;
-const modeTabImpostor = document.getElementById("mode-tab-impostor") as HTMLButtonElement;
-const duelModePanel = document.getElementById("duel-mode-panel") as HTMLDivElement;
-const impostorModePanel = document.getElementById("impostor-mode-panel") as HTMLDivElement;
-
-modeTabDuel.addEventListener("click", () => {
-  modeTabDuel.classList.add("mode-tab-active");
-  modeTabImpostor.classList.remove("mode-tab-active");
-  duelModePanel.classList.remove("hidden");
-  impostorModePanel.classList.add("hidden");
-});
-modeTabImpostor.addEventListener("click", () => {
-  modeTabImpostor.classList.add("mode-tab-active");
-  modeTabDuel.classList.remove("mode-tab-active");
-  impostorModePanel.classList.remove("hidden");
-  duelModePanel.classList.add("hidden");
-});
 
 btnStart.addEventListener("click", () => {
   const mode = settingsStore.get().lookMode;
@@ -275,8 +234,6 @@ btnLeaveMatch.addEventListener("click", () => {
   } else if (activeMode === botMode) {
     stopBotMode();
     multiplayer.showMenu();
-  } else if (activeMode === impostorFlow.activeMatch) {
-    impostorFlow.leaveRoom();
   } else {
     multiplayer.leaveRoom();
   }
@@ -317,8 +274,8 @@ function animate(now: number) {
   // Captured once per frame rather than re-reading the outer `activeMode`
   // between calls — BotMode's match-end callback fires synchronously from
   // inside its own update() (no server round-trip to defer it to, unlike
-  // Duel/Imposter), which reassigns the outer variable to null mid-frame.
-  // Re-reading it for getShakeOffset() would then crash on a null access.
+  // Duel), which reassigns the outer variable to null mid-frame. Re-reading
+  // it for getShakeOffset() would then crash on a null access.
   const mode = activeMode;
   if (mode) {
     mode.update(frameDt);
@@ -375,7 +332,6 @@ if (import.meta.env.DEV) {
     camera,
     scene,
     multiplayer,
-    impostorFlow,
     soundEngine,
   };
 }

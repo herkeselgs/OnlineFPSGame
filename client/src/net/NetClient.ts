@@ -1,12 +1,6 @@
-import { ClientMessage, ImpostorClientMessage, ImpostorServerMessage, ServerMessage } from "@fps/shared";
+import { ClientMessage, ServerMessage } from "@fps/shared";
 
-// Widened to cover both modes' message unions — NetClient itself is mode-
-// agnostic (just typed JSON over one WebSocket); MatchController/Hud vs.
-// ImpostorMatchController/ImpostorFlow are what actually stay mode-specific.
-type AnyClientMessage = ClientMessage | ImpostorClientMessage;
-type AnyServerMessage = ServerMessage | ImpostorServerMessage;
-
-type MessageHandler = (msg: AnyServerMessage) => void;
+type MessageHandler = (msg: ServerMessage) => void;
 type ConnectionHandler = (connected: boolean) => void;
 
 const MAX_RECONNECT_DELAY_MS = 8000;
@@ -39,7 +33,7 @@ export class NetClient {
     this.ws?.close();
   }
 
-  send(msg: AnyClientMessage): void {
+  send(msg: ClientMessage): void {
     if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(msg));
   }
 
@@ -66,7 +60,7 @@ export class NetClient {
       for (const h of this.connectionHandlers) h(true);
     };
     ws.onmessage = (ev) => {
-      let msg: AnyServerMessage;
+      let msg: ServerMessage;
       try {
         msg = JSON.parse(ev.data);
       } catch {

@@ -13,11 +13,10 @@ import { buildPanelTexture } from "./proceduralTextures";
  * geometry translated so it hangs from the pivot's origin, the standard
  * "poor man's rig" trick for posing primitives without real bones.
  *
- * One instance of this per rendered character (RemotePlayer,
- * ImpostorRemotePlayer, Target practice dummies, the first-person
- * viewmodel) — cheap enough that sharing geometry across instances isn't
- * worth the complexity at this game's player counts (2 for Duel, up to 10
- * for Imposter).
+ * One instance of this per rendered character (RemotePlayer, Bot, Target
+ * practice dummies, the first-person viewmodel) — cheap enough that sharing
+ * geometry across instances isn't worth the complexity at this game's
+ * player counts (2 for Duel).
  */
 
 const HELMET_COLOR = 0x20262c;
@@ -296,8 +295,8 @@ export function buildStandaloneGun(initialWeapon: WeaponId = "rifle"): Standalon
 export interface CharacterModel {
   /** Add this to the character's hit-collider mesh as a child so it rides
    * along with that mesh's per-frame position/yaw updates for free — see
-   * RemotePlayer/ImpostorRemotePlayer, which keep their original capsule
-   * (now invisible) as the actual raycast target and never touch it. */
+   * RemotePlayer, which keeps its original capsule (now invisible) as the
+   * actual raycast target and never touches it. */
   root: THREE.Group;
   setColor(hex: number): void;
   /** Crewmates in Imposter mode carry no weapon at all (that's the whole

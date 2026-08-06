@@ -121,15 +121,12 @@ export class Hud {
     this.damageDirEl.style.opacity = "1";
   }
 
-  /** Called when leaving a Duel match (or never entering one, e.g. an
-   * Imposter match starting instead) — every element here is CSS-visible
-   * by default from page load (only ever masked by whichever full-screen
-   * `.screen` currently covers the viewport), so without an explicit hide,
-   * stale Duel HUD content (crosshair, health, ammo) shows through the
-   * instant a mode with no Duel-style HUD of its own — Imposter — starts
-   * live gameplay with no `.screen` covering it. showWeaponHud() is the
-   * matching call Duel's own match/practice start makes to bring them
-   * back. */
+  /** Called when leaving a Duel/Bot match — every element here is
+   * CSS-visible by default from page load (only ever masked by whichever
+   * full-screen `.screen` currently covers the viewport), so without an
+   * explicit hide, stale match HUD content (crosshair, health, ammo) would
+   * show through over the menu screens. showWeaponHud() is the matching
+   * call each mode's start makes to bring them back. */
   hideMatchInfo(): void {
     this.scoreEl.style.display = "none";
     this.timerEl.style.display = "none";
