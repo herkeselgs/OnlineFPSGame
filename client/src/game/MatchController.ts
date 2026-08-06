@@ -184,7 +184,8 @@ export class MatchController {
         p.color,
         p.kills,
         p.deaths,
-        p.reloading
+        p.reloading,
+        p.crouching
       );
     }
   }

@@ -100,7 +100,7 @@ export class InputManager {
     return this.keys.has(code);
   }
 
-  getMoveAxes(): { forward: number; right: number; jump: boolean } {
+  getMoveAxes(): { forward: number; right: number; jump: boolean; sprint: boolean; crouch: boolean } {
     let forward = 0;
     let right = 0;
     if (this.keys.has(this.keybinds.forward)) forward += 1;
@@ -108,7 +108,13 @@ export class InputManager {
     if (this.keys.has(this.keybinds.right)) right += 1;
     if (this.keys.has(this.keybinds.left)) right -= 1;
     const jump = this.keys.has(this.keybinds.jump);
-    return { forward, right, jump };
+    // Not routed through Keybinds (no remap UI exposes them anyway): Shift
+    // is safe to hold alongside WASD with no browser side effects, but
+    // Ctrl is deliberately avoided for crouch — Ctrl+W closes the tab in
+    // Chrome, and this game doesn't call preventDefault on movement keys.
+    const sprint = this.keys.has("ShiftLeft") || this.keys.has("ShiftRight");
+    const crouch = this.keys.has("KeyC");
+    return { forward, right, jump, sprint, crouch };
   }
 
   destroy(): void {

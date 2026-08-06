@@ -340,7 +340,7 @@ export class ImpostorMatchController {
         rp = new ImpostorRemotePlayer(this.scene, p.id, this.playerNames.get(p.id) ?? "Player");
         this.remotePlayersMap.set(p.id, rp);
       }
-      rp.ingestSnapshot(p.position, p.yaw, p.pitch, p.velocity, serverTimeMs, p.color, p.hasWeapon);
+      rp.ingestSnapshot(p.position, p.yaw, p.pitch, p.velocity, serverTimeMs, p.color, p.hasWeapon, p.crouching);
       this.remoteHasWeapon.set(p.id, p.hasWeapon);
     }
     // Ejected players stop appearing in snapshots entirely (see

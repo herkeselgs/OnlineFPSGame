@@ -14,6 +14,8 @@ export interface ClientInputMessage {
   forward: number;
   right: number;
   jump: boolean;
+  sprint: boolean;
+  crouch: boolean;
   yaw: number;
   pitch: number;
   dt: number;
@@ -63,6 +65,7 @@ export interface PlayerSnapshot {
   yaw: number;
   pitch: number;
   onGround: boolean;
+  crouching: boolean;
   health: number;
   alive: boolean;
   spawnProtectedUntil: number;

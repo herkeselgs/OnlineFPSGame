@@ -1,5 +1,9 @@
 import {
   ARM_ZONE_HALF_WIDTH,
+  CROUCH_HALF_EXTENTS,
+  CROUCH_HEAD_BAND_MAX_Y,
+  CROUCH_HEAD_BAND_MIN_Y,
+  CROUCH_LEG_BAND_MAX_Y,
   HEAD_BAND_MAX_Y,
   HEAD_BAND_MIN_Y,
   HEAD_HALF_WIDTH,
@@ -79,10 +83,13 @@ export function rayIntersectsBox(
  * the movement box, spanning from LEG_BAND_MAX_Y (the leg box picks up
  * everything below that) up to HEAD_BAND_MIN_Y (the head box picks up
  * everything above). Used only for hit detection, never movement/collision
- * (which keeps using one uniform PLAYER_HALF_EXTENTS box, unchanged). */
-export function torsoHitBox(bodyCenter: Vec3): BoxCollider {
-  const yMin = LEG_BAND_MAX_Y;
-  const yMax = HEAD_BAND_MIN_Y;
+ * (which keeps using one uniform PLAYER_HALF_EXTENTS box, unchanged).
+ * `crouching` swaps in the scaled crouch bands (see constants.ts) so a
+ * ducked target's hit zones shrink along with their visual/collider
+ * height instead of staying standing-sized. */
+export function torsoHitBox(bodyCenter: Vec3, crouching = false): BoxCollider {
+  const yMin = crouching ? CROUCH_LEG_BAND_MAX_Y : LEG_BAND_MAX_Y;
+  const yMax = crouching ? CROUCH_HEAD_BAND_MIN_Y : HEAD_BAND_MIN_Y;
   return {
     center: { x: bodyCenter.x, y: bodyCenter.y + (yMin + yMax) / 2, z: bodyCenter.z },
     half: { x: PLAYER_RADIUS, y: (yMax - yMin) / 2, z: PLAYER_RADIUS },
@@ -93,9 +100,9 @@ export function torsoHitBox(bodyCenter: Vec3): BoxCollider {
  * with no gap and no overlap (see constants.ts for why the two must stay
  * disjoint in Y — an overlapping narrower box would never win a nearest-hit
  * test against the wider torso box surrounding it). */
-export function headHitBox(bodyCenter: Vec3): BoxCollider {
-  const yMin = HEAD_BAND_MIN_Y;
-  const yMax = HEAD_BAND_MAX_Y;
+export function headHitBox(bodyCenter: Vec3, crouching = false): BoxCollider {
+  const yMin = crouching ? CROUCH_HEAD_BAND_MIN_Y : HEAD_BAND_MIN_Y;
+  const yMax = crouching ? CROUCH_HEAD_BAND_MAX_Y : HEAD_BAND_MAX_Y;
   return {
     center: { x: bodyCenter.x, y: bodyCenter.y + (yMin + yMax) / 2, z: bodyCenter.z },
     half: { x: HEAD_HALF_WIDTH, y: (yMax - yMin) / 2, z: HEAD_HALF_WIDTH },
@@ -105,9 +112,9 @@ export function headHitBox(bodyCenter: Vec3): BoxCollider {
 /** The leg hit box: same width as the torso, filling the rest of the way
  * down from LEG_BAND_MAX_Y to the feet. Disjoint from the torso box above
  * it for the same reason head/torso are — see that pair's comment. */
-export function legHitBox(bodyCenter: Vec3): BoxCollider {
-  const yMin = -PLAYER_HALF_EXTENTS.y;
-  const yMax = LEG_BAND_MAX_Y;
+export function legHitBox(bodyCenter: Vec3, crouching = false): BoxCollider {
+  const yMin = crouching ? -CROUCH_HALF_EXTENTS.y : -PLAYER_HALF_EXTENTS.y;
+  const yMax = crouching ? CROUCH_LEG_BAND_MAX_Y : LEG_BAND_MAX_Y;
   return {
     center: { x: bodyCenter.x, y: bodyCenter.y + (yMin + yMax) / 2, z: bodyCenter.z },
     half: { x: PLAYER_RADIUS, y: (yMax - yMin) / 2, z: PLAYER_RADIUS },
@@ -116,10 +123,11 @@ export function legHitBox(bodyCenter: Vec3): BoxCollider {
 
 /** The two arm hit boxes, flanking the torso box on either side at the same
  * height (a held-forward arm sits beside the torso, not stacked above or
- * below it, so this pair splits on X instead of Y). */
-export function armHitBoxes(bodyCenter: Vec3): [BoxCollider, BoxCollider] {
-  const yMin = LEG_BAND_MAX_Y;
-  const yMax = HEAD_BAND_MIN_Y;
+ * below it, so this pair splits on X instead of Y). X offset is unaffected
+ * by crouching (only height changes, not body radius). */
+export function armHitBoxes(bodyCenter: Vec3, crouching = false): [BoxCollider, BoxCollider] {
+  const yMin = crouching ? CROUCH_LEG_BAND_MAX_Y : LEG_BAND_MAX_Y;
+  const yMax = crouching ? CROUCH_HEAD_BAND_MIN_Y : HEAD_BAND_MIN_Y;
   const yHalf = (yMax - yMin) / 2;
   const yCenter = bodyCenter.y + (yMin + yMax) / 2;
   const xOffset = PLAYER_RADIUS + ARM_ZONE_HALF_WIDTH;
@@ -142,17 +150,18 @@ export function resolvePlayerHit(
   origin: Vec3,
   dir: Vec3,
   bodyCenter: Vec3,
-  maxDist: number
+  maxDist: number,
+  crouching = false
 ): { distance: number; zone: HitZone } | null {
   let best: { distance: number; zone: HitZone } | null = null;
   const check = (box: BoxCollider, zone: HitZone) => {
     const d = rayIntersectsBox(origin, dir, box, best ? best.distance : maxDist);
     if (d !== null && (best === null || d < best.distance)) best = { distance: d, zone };
   };
-  check(torsoHitBox(bodyCenter), "torso");
-  check(headHitBox(bodyCenter), "head");
-  check(legHitBox(bodyCenter), "limb");
-  const [armLeft, armRight] = armHitBoxes(bodyCenter);
+  check(torsoHitBox(bodyCenter, crouching), "torso");
+  check(headHitBox(bodyCenter, crouching), "head");
+  check(legHitBox(bodyCenter, crouching), "limb");
+  const [armLeft, armRight] = armHitBoxes(bodyCenter, crouching);
   check(armLeft, "limb");
   check(armRight, "limb");
   return best;

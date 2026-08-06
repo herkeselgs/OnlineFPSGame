@@ -2,8 +2,7 @@ import {
   BoxCollider,
   ClientInputMessage,
   createPlayerCombatState,
-  PLAYER_EYE_HEIGHT,
-  PLAYER_HALF_EXTENTS,
+  eyeHeightOffset,
   PlayerCombatState,
   PlayerPhysicsState,
   PlayerSnapshot,
@@ -72,7 +71,7 @@ export class PredictionController {
     private camera: THREE.PerspectiveCamera,
     private ladders: readonly BoxCollider[] = []
   ) {
-    this.physics = { position: { ...spawn.position }, velocity: { x: 0, y: 0, z: 0 }, onGround: false };
+    this.physics = { position: { ...spawn.position }, velocity: { x: 0, y: 0, z: 0 }, onGround: false, crouching: false };
     this.yaw = spawn.yaw;
   }
 
@@ -175,7 +174,16 @@ export class PredictionController {
     if (this.combat.alive) {
       this.physics = stepPlayerMovement(
         this.physics,
-        { forward: axes.forward, right: axes.right, jump: axes.jump, yaw: this.yaw, seq, dt: SIM_DT },
+        {
+          forward: axes.forward,
+          right: axes.right,
+          jump: axes.jump,
+          sprint: axes.sprint,
+          crouch: axes.crouch,
+          yaw: this.yaw,
+          seq,
+          dt: SIM_DT,
+        },
         this.colliders,
         this.ladders
       );
@@ -187,6 +195,8 @@ export class PredictionController {
       forward: axes.forward,
       right: axes.right,
       jump: axes.jump,
+      sprint: axes.sprint,
+      crouch: axes.crouch,
       yaw: this.yaw,
       pitch: this.pitch,
       dt: SIM_DT,
@@ -231,7 +241,7 @@ export class PredictionController {
     this.combat.deaths = entry.deaths;
     this.weapon.syncFromServer(entry.weapon, entry.ammo, entry.reloading);
 
-    this.physics = { position: entry.position, velocity: entry.velocity, onGround: entry.onGround };
+    this.physics = { position: entry.position, velocity: entry.velocity, onGround: entry.onGround, crouching: entry.crouching };
     if (this.combat.alive) {
       for (const replayInput of this.pendingInputs) {
         this.physics = stepPlayerMovement(
@@ -240,6 +250,8 @@ export class PredictionController {
             forward: replayInput.forward,
             right: replayInput.right,
             jump: replayInput.jump,
+            sprint: replayInput.sprint,
+            crouch: replayInput.crouch,
             yaw: replayInput.yaw,
             seq: replayInput.seq,
             dt: replayInput.dt,
@@ -252,10 +264,9 @@ export class PredictionController {
   }
 
   getEyePosition(): { x: number; y: number; z: number } {
-    const eyeOffset = PLAYER_EYE_HEIGHT - PLAYER_HALF_EXTENTS.y;
     return {
       x: this.physics.position.x,
-      y: this.physics.position.y + eyeOffset,
+      y: this.physics.position.y + eyeHeightOffset(this.physics.crouching),
       z: this.physics.position.z,
     };
   }

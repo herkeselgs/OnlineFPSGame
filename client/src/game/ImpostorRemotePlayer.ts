@@ -28,6 +28,7 @@ export class ImpostorRemotePlayer {
   private hasWeapon = false;
   private lastVelocity: Vec3 = { x: 0, y: 0, z: 0 };
   private lastPitch = 0;
+  private crouching = false;
 
   constructor(scene: THREE.Scene, id: string, name: string) {
     this.id = id;
@@ -43,10 +44,20 @@ export class ImpostorRemotePlayer {
     this.mesh.add(this.character.root);
   }
 
-  ingestSnapshot(position: Vec3, yaw: number, pitch: number, velocity: Vec3, serverTimeMs: number, color: number, hasWeapon: boolean): void {
-    this.history.push({ time: serverTimeMs, position, yaw });
+  ingestSnapshot(
+    position: Vec3,
+    yaw: number,
+    pitch: number,
+    velocity: Vec3,
+    serverTimeMs: number,
+    color: number,
+    hasWeapon: boolean,
+    crouching: boolean
+  ): void {
+    this.history.push({ time: serverTimeMs, position, yaw, crouching });
     this.lastVelocity = velocity;
     this.lastPitch = pitch;
+    this.crouching = crouching;
     if (color !== this.currentColor) {
       this.currentColor = color;
       this.material.color.setHex(color);
@@ -65,7 +76,7 @@ export class ImpostorRemotePlayer {
       this.mesh.rotation.y = sample.yaw;
     }
     const speed = Math.hypot(this.lastVelocity.x, this.lastVelocity.z);
-    this.character.updateAnimation(frameDtMs, speed, this.lastPitch);
+    this.character.updateAnimation(frameDtMs, speed, this.lastPitch, false, this.crouching);
   }
 
   dispose(scene: THREE.Scene): void {

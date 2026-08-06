@@ -421,7 +421,7 @@ export class ImpostorRoom {
    * allowed more (it can't; applyConfig caps maxPlayers there too). */
   private assignSpawn(session: ImpostorPlayerSession, spawnIndex: number): void {
     const spawn = this.map.spawns[spawnIndex % this.map.spawns.length];
-    session.physics = { position: { ...spawn.position }, velocity: { x: 0, y: 0, z: 0 }, onGround: false };
+    session.physics = { position: { ...spawn.position }, velocity: { x: 0, y: 0, z: 0 }, onGround: false, crouching: false };
     session.yaw = spawn.yaw;
     session.pitch = 0;
   }
@@ -745,12 +745,26 @@ export class ImpostorRoom {
 
       session.physics = stepPlayerMovement(
         session.physics,
-        { forward: input.forward, right: input.right, jump: input.jump, yaw: input.yaw, seq: input.seq, dt: input.dt },
+        {
+          forward: input.forward,
+          right: input.right,
+          jump: input.jump,
+          sprint: input.sprint,
+          crouch: input.crouch,
+          yaw: input.yaw,
+          seq: input.seq,
+          dt: input.dt,
+        },
         this.map.blocks,
         this.map.ladders
       );
 
-      session.history.push({ time: nowMs, position: session.physics.position, yaw: session.yaw });
+      session.history.push({
+        time: nowMs,
+        position: session.physics.position,
+        yaw: session.yaw,
+        crouching: session.physics.crouching,
+      });
     }
     session.inputQueue.length = 0;
   }
@@ -805,6 +819,7 @@ export class ImpostorRoom {
         yaw: p.yaw,
         pitch: p.pitch,
         onGround: p.physics.onGround,
+        crouching: p.physics.crouching,
         color: p.color,
         hasWeapon: this.roles.get(p.id) === "imposter",
         lastProcessedSeq: p.lastProcessedSeq,

@@ -89,7 +89,7 @@ export function createImpostorPlayerSession(id: PlayerId, ws: WebSocket, name: s
     ready: false,
     connected: true,
     reconnectToken: randomUUID(),
-    physics: { position: { x: 0, y: 0, z: 0 }, velocity: { x: 0, y: 0, z: 0 }, onGround: false },
+    physics: { position: { x: 0, y: 0, z: 0 }, velocity: { x: 0, y: 0, z: 0 }, onGround: false, crouching: false },
     yaw: 0,
     pitch: 0,
     inputQueue: [],

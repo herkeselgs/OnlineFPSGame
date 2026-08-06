@@ -1,12 +1,4 @@
-import {
-  BoxCollider,
-  PLAYER_EYE_HEIGHT,
-  PLAYER_HALF_EXTENTS,
-  PlayerPhysicsState,
-  SIM_DT,
-  SpawnPoint,
-  stepPlayerMovement,
-} from "@fps/shared";
+import { BoxCollider, eyeHeightOffset, PlayerPhysicsState, SIM_DT, SpawnPoint, stepPlayerMovement } from "@fps/shared";
 import { InputManager } from "./InputManager";
 
 const MAX_PITCH = Math.PI / 2 - 0.01;
@@ -36,6 +28,7 @@ export class PlayerController {
       position: { ...spawn.position },
       velocity: { x: 0, y: 0, z: 0 },
       onGround: false,
+      crouching: false,
     };
     this.yaw = spawn.yaw;
   }
@@ -57,6 +50,8 @@ export class PlayerController {
           forward: axes.forward,
           right: axes.right,
           jump: axes.jump,
+          sprint: axes.sprint,
+          crouch: axes.crouch,
           yaw: this.yaw,
           seq: this.seq++,
           dt: SIM_DT,
@@ -69,10 +64,9 @@ export class PlayerController {
   }
 
   getEyePosition(): { x: number; y: number; z: number } {
-    const eyeOffset = PLAYER_EYE_HEIGHT - PLAYER_HALF_EXTENTS.y;
     return {
       x: this.state.position.x,
-      y: this.state.position.y + eyeOffset,
+      y: this.state.position.y + eyeHeightOffset(this.state.crouching),
       z: this.state.position.z,
     };
   }

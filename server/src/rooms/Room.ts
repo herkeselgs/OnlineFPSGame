@@ -4,6 +4,7 @@ import {
   createPlayerCombatState,
   damageMultiplierFor,
   DEFAULT_MAP_ID,
+  eyeHeightOffset,
   HitZone,
   INTERP_DELAY_MS,
   MAPS,
@@ -12,8 +13,6 @@ import {
   MATCH_SCORE_LIMIT,
   MatchPhase,
   normalize,
-  PLAYER_EYE_HEIGHT,
-  PLAYER_HALF_EXTENTS,
   PlayerId,
   PlayerSnapshot,
   rayIntersectsBox,
@@ -277,7 +276,7 @@ export class Room {
     for (const [id, session] of this.players) {
       const spawnIndex = this.spawnIndexByPlayer.get(id) ?? 0;
       const spawn = this.map.spawns[spawnIndex];
-      session.physics = { position: { ...spawn.position }, velocity: { x: 0, y: 0, z: 0 }, onGround: false };
+      session.physics = { position: { ...spawn.position }, velocity: { x: 0, y: 0, z: 0 }, onGround: false, crouching: false };
       session.yaw = spawn.yaw;
       session.pitch = 0;
       session.combat = createPlayerCombatState();
@@ -303,6 +302,7 @@ export class Room {
         session.physics.position = { ...spawn.position };
         session.physics.velocity = { x: 0, y: 0, z: 0 };
         session.physics.onGround = false;
+        session.physics.crouching = false;
         session.yaw = spawn.yaw;
         session.pitch = 0;
         respawn(session.combat, nowMs);
@@ -334,6 +334,8 @@ export class Room {
             forward: input.forward,
             right: input.right,
             jump: input.jump,
+            sprint: input.sprint,
+            crouch: input.crouch,
             yaw: input.yaw,
             seq: input.seq,
             dt: input.dt,
@@ -347,7 +349,12 @@ export class Room {
         if (input.fire) this.handleFire(session, input.fireDirections ?? [], nowMs);
       }
 
-      session.history.push({ time: nowMs, position: session.physics.position, yaw: session.yaw });
+      session.history.push({
+        time: nowMs,
+        position: session.physics.position,
+        yaw: session.yaw,
+        crouching: session.physics.crouching,
+      });
     }
     session.inputQueue.length = 0;
   }
@@ -357,10 +364,9 @@ export class Room {
     if (!result.fired) return;
 
     const weaponDef = shooter.weapon.current;
-    const eyeOffset = PLAYER_EYE_HEIGHT - PLAYER_HALF_EXTENTS.y;
     const origin: Vec3 = {
       x: shooter.physics.position.x,
-      y: shooter.physics.position.y + eyeOffset,
+      y: shooter.physics.position.y + eyeHeightOffset(shooter.physics.crouching),
       z: shooter.physics.position.z,
     };
     // Rewind other players to roughly where the shooter actually saw them:
@@ -398,7 +404,7 @@ export class Room {
       const sample = target.history.sampleAt(rewindTime) ?? target.history.latest();
       if (!sample) continue;
 
-      const hit = resolvePlayerHit(origin, dir, sample.position, nearestDist);
+      const hit = resolvePlayerHit(origin, dir, sample.position, nearestDist, sample.crouching);
       if (hit && hit.distance < nearestDist) {
         nearestDist = hit.distance;
         bestTarget = target;
@@ -492,6 +498,7 @@ export class Room {
       yaw: p.yaw,
       pitch: p.pitch,
       onGround: p.physics.onGround,
+      crouching: p.physics.crouching,
       health: p.combat.health,
       alive: p.combat.alive,
       spawnProtectedUntil: p.combat.spawnProtectedUntil,

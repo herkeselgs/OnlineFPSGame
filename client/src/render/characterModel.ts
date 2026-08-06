@@ -1,4 +1,4 @@
-import { WeaponId } from "@fps/shared";
+import { CROUCH_HALF_EXTENTS, PLAYER_HALF_EXTENTS, WeaponId } from "@fps/shared";
 import * as THREE from "three";
 
 /**
@@ -61,6 +61,18 @@ const FOOT_SIZE = { x: 0.16, y: 0.08, z: 0.24 };
 const GUN_POSITION = { x: 0, y: 0.32, z: -0.58 };
 const WALK_SWING_MAX_RAD = THREE.MathUtils.degToRad(38);
 const WALK_CYCLE_SPEED = 7.5; // radians of phase per m/s of horizontal speed
+
+// Crouch pose: no separate crouched rig (no bone system to re-pose with —
+// see the file comment), just a vertical squash of the whole model around
+// its local origin. Squashing by exactly the same ratio the collider
+// itself shrinks by (rather than a separately-tuned number) means the
+// compressed legs' visual feet rise by about as much as the physics
+// position's feet-anchored downward shift already moved the whole rig
+// down — the two roughly cancel out, so squashed feet still read as
+// touching the floor instead of floating or sinking. Eased over a short
+// duration rather than snapped so the pose doesn't pop.
+const CROUCH_VISUAL_SCALE_Y = CROUCH_HALF_EXTENTS.y / PLAYER_HALF_EXTENTS.y;
+const CROUCH_EASE_MS = 140;
 
 // Reload "tell": the held weapon dips and rolls forward while reloading,
 // then springs back — driven either by exact WeaponState.reloadProgress
@@ -246,8 +258,16 @@ export interface CharacterModel {
    * boolean (RemotePlayer/Bot have no reload-progress fraction to work
    * with), so the pose is approached over a fixed duration rather than
    * synced to the actual reload timer; see Viewmodel for the first-person
-   * version, which does have exact progress and syncs precisely. */
-  updateAnimation(dtMs: number, horizontalSpeed: number, aimPitchRad: number, isReloading?: boolean): void;
+   * version, which does have exact progress and syncs precisely.
+   * crouching eases the whole model into a squashed crouch pose and back
+   * (see CROUCH_VISUAL_SCALE_Y). */
+  updateAnimation(
+    dtMs: number,
+    horizontalSpeed: number,
+    aimPitchRad: number,
+    isReloading?: boolean,
+    crouching?: boolean
+  ): void;
   /** Brief white emissive flash across every body part, for hit feedback —
    * replaces the old single-mesh "swap material color" trick now that the
    * visible body is several separate meshes. */
@@ -338,6 +358,7 @@ export function buildCharacterModel(initialColor: number, initialWeapon: WeaponI
   let walkPhase = 0;
   let flashRemainingMs = 0;
   let reloadPhase = 0; // 0 = rest pose, 1 = fully into the reload pose
+  let crouchPhase = 0; // 0 = standing scale, 1 = fully crouched scale
 
   return {
     root,
@@ -368,13 +389,23 @@ export function buildCharacterModel(initialColor: number, initialWeapon: WeaponI
       }
     },
 
-    updateAnimation(dtMs: number, horizontalSpeed: number, aimPitchRad: number, isReloading = false): void {
+    updateAnimation(
+      dtMs: number,
+      horizontalSpeed: number,
+      aimPitchRad: number,
+      isReloading = false,
+      crouching = false
+    ): void {
       weaponPivot.rotation.x = aimPitchRad;
 
       const reloadStep = dtMs / RELOAD_EASE_MS;
       reloadPhase = isReloading ? Math.min(1, reloadPhase + reloadStep) : Math.max(0, reloadPhase - reloadStep);
       gunMount.rotation.x = reloadPhase * RELOAD_TILT_X_RAD;
       gunMount.rotation.z = reloadPhase * RELOAD_ROLL_Z_RAD;
+
+      const crouchStep = dtMs / CROUCH_EASE_MS;
+      crouchPhase = crouching ? Math.min(1, crouchPhase + crouchStep) : Math.max(0, crouchPhase - crouchStep);
+      root.scale.y = 1 - crouchPhase * (1 - CROUCH_VISUAL_SCALE_Y);
 
       const amplitude = Math.min(1, horizontalSpeed / 4.5) * WALK_SWING_MAX_RAD;
       walkPhase += (dtMs / 1000) * WALK_CYCLE_SPEED * Math.min(1, horizontalSpeed / 2.5 + 0.15);

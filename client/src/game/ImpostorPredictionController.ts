@@ -1,9 +1,8 @@
 import {
   BoxCollider,
   ClientInputMessage,
+  eyeHeightOffset,
   ImpostorPlayerSnapshot,
-  PLAYER_EYE_HEIGHT,
-  PLAYER_HALF_EXTENTS,
   PlayerPhysicsState,
   SIM_DT,
   SpawnPoint,
@@ -43,7 +42,7 @@ export class ImpostorPredictionController {
     private camera: THREE.PerspectiveCamera,
     private ladders: readonly BoxCollider[] = []
   ) {
-    this.physics = { position: { ...spawn.position }, velocity: { x: 0, y: 0, z: 0 }, onGround: false };
+    this.physics = { position: { ...spawn.position }, velocity: { x: 0, y: 0, z: 0 }, onGround: false, crouching: false };
     this.yaw = spawn.yaw;
   }
 
@@ -81,7 +80,16 @@ export class ImpostorPredictionController {
     const seq = this.seq++;
     this.physics = stepPlayerMovement(
       this.physics,
-      { forward: axes.forward, right: axes.right, jump: axes.jump, yaw: this.yaw, seq, dt: SIM_DT },
+      {
+        forward: axes.forward,
+        right: axes.right,
+        jump: axes.jump,
+        sprint: axes.sprint,
+        crouch: axes.crouch,
+        yaw: this.yaw,
+        seq,
+        dt: SIM_DT,
+      },
       this.colliders,
       this.ladders
     );
@@ -97,6 +105,8 @@ export class ImpostorPredictionController {
       forward: axes.forward,
       right: axes.right,
       jump: axes.jump,
+      sprint: axes.sprint,
+      crouch: axes.crouch,
       yaw: this.yaw,
       pitch: this.pitch,
       dt: SIM_DT,
@@ -110,7 +120,7 @@ export class ImpostorPredictionController {
 
   applyServerSnapshot(entry: ImpostorPlayerSnapshot): void {
     this.pendingInputs = this.pendingInputs.filter((i) => i.seq > entry.lastProcessedSeq);
-    this.physics = { position: entry.position, velocity: entry.velocity, onGround: entry.onGround };
+    this.physics = { position: entry.position, velocity: entry.velocity, onGround: entry.onGround, crouching: entry.crouching };
     for (const replayInput of this.pendingInputs) {
       this.physics = stepPlayerMovement(
         this.physics,
@@ -118,6 +128,8 @@ export class ImpostorPredictionController {
           forward: replayInput.forward,
           right: replayInput.right,
           jump: replayInput.jump,
+          sprint: replayInput.sprint,
+          crouch: replayInput.crouch,
           yaw: replayInput.yaw,
           seq: replayInput.seq,
           dt: replayInput.dt,
@@ -129,10 +141,9 @@ export class ImpostorPredictionController {
   }
 
   getEyePosition(): { x: number; y: number; z: number } {
-    const eyeOffset = PLAYER_EYE_HEIGHT - PLAYER_HALF_EXTENTS.y;
     return {
       x: this.physics.position.x,
-      y: this.physics.position.y + eyeOffset,
+      y: this.physics.position.y + eyeHeightOffset(this.physics.crouching),
       z: this.physics.position.z,
     };
   }

@@ -155,7 +155,7 @@ export class BotMode {
 
     if (!this.playerCombat.alive && nowMs - this.localDeathAtMs >= RESPAWN_TIME_MS) {
       respawn(this.playerCombat, nowMs);
-      this.player.state = { position: { ...this.playerSpawnPosition }, velocity: { x: 0, y: 0, z: 0 }, onGround: false };
+      this.player.state = { position: { ...this.playerSpawnPosition }, velocity: { x: 0, y: 0, z: 0 }, onGround: false, crouching: false };
       this.player.yaw = this.playerSpawnYaw;
       this.player.pitch = 0;
     }
@@ -285,7 +285,7 @@ export class BotMode {
       if (d !== null && d < nearestDist) nearestDist = d;
     }
 
-    const hit = resolvePlayerHit(ev.origin, ev.dir, this.player.state.position, nearestDist);
+    const hit = resolvePlayerHit(ev.origin, ev.dir, this.player.state.position, nearestDist, this.player.state.crouching);
     const travelDist = hit ? hit.distance : nearestDist;
     const from = new THREE.Vector3(ev.origin.x, ev.origin.y, ev.origin.z);
     const to = from.clone().add(new THREE.Vector3(ev.dir.x, ev.dir.y, ev.dir.z).multiplyScalar(travelDist));

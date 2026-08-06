@@ -3,14 +3,13 @@ import {
   armHitBoxes,
   BoxCollider,
   createPlayerCombatState,
+  eyeHeightOffset,
   HEAD_BAND_MAX_Y,
   HEAD_BAND_MIN_Y,
   HitZone,
   legHitBox,
   PlayerCombatState,
   PlayerPhysicsState,
-  PLAYER_EYE_HEIGHT,
-  PLAYER_HALF_EXTENTS,
   rayIntersectsBox,
   respawn,
   SIM_DT,
@@ -95,7 +94,7 @@ export class Bot {
   ) {
     this.spawnPosition = { ...spawn.position };
     this.spawnYaw = spawn.yaw;
-    this.physics = { position: { ...spawn.position }, velocity: { x: 0, y: 0, z: 0 }, onGround: false };
+    this.physics = { position: { ...spawn.position }, velocity: { x: 0, y: 0, z: 0 }, onGround: false, crouching: false };
     this.yaw = spawn.yaw;
 
     this.geometry = new THREE.CapsuleGeometry(0.35, 1.0, 4, 8);
@@ -137,8 +136,7 @@ export class Bot {
   }
 
   getEyePosition(): Vec3 {
-    const eyeOffset = PLAYER_EYE_HEIGHT - PLAYER_HALF_EXTENTS.y;
-    return { x: this.physics.position.x, y: this.physics.position.y + eyeOffset, z: this.physics.position.z };
+    return { x: this.physics.position.x, y: this.physics.position.y + eyeHeightOffset(this.physics.crouching), z: this.physics.position.z };
   }
 
   private positionHitboxes(): void {
@@ -165,7 +163,7 @@ export class Bot {
     this.weapon.update(frameDt * 1000);
 
     if (!this.combat.alive || !playerAlive) {
-      this.character.updateAnimation(frameDt * 1000, 0, 0, this.weapon.isReloading);
+      this.character.updateAnimation(frameDt * 1000, 0, 0, this.weapon.isReloading, this.physics.crouching);
       return null;
     }
 
@@ -231,7 +229,7 @@ export class Bot {
 
     this.positionHitboxes();
     const speed = Math.hypot(this.physics.velocity.x, this.physics.velocity.z);
-    this.character.updateAnimation(frameDt * 1000, speed, 0, this.weapon.isReloading);
+    this.character.updateAnimation(frameDt * 1000, speed, 0, this.weapon.isReloading, this.physics.crouching);
 
     let fireEvent: BotFireEvent | null = null;
     const reactionElapsed = this.losAcquiredAtMs !== null && nowMs - this.losAcquiredAtMs >= difficulty.reactionMs;
@@ -297,7 +295,7 @@ export class Bot {
 
   respawnAt(nowMs: number): void {
     respawn(this.combat, nowMs);
-    this.physics = { position: { ...this.spawnPosition }, velocity: { x: 0, y: 0, z: 0 }, onGround: false };
+    this.physics = { position: { ...this.spawnPosition }, velocity: { x: 0, y: 0, z: 0 }, onGround: false, crouching: false };
     this.yaw = this.spawnYaw;
     for (const m of this.raycastMeshes) m.visible = true;
     this.positionHitboxes();

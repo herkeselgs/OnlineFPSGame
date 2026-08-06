@@ -99,6 +99,7 @@ export interface ImpostorPlayerSnapshot {
   yaw: number;
   pitch: number;
   onGround: boolean;
+  crouching: boolean;
   color: number;
   /** Purely a visual attribute — true for imposters, false for crewmates,
    * fixed for the round. This IS the "carries a visible gun" tell from the

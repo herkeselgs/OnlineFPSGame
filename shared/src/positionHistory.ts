@@ -4,6 +4,14 @@ export interface PositionSample {
   time: number; // ms, same clock domain as whatever calls sampleAt
   position: Vec3;
   yaw: number;
+  /** Stance at this sample's timestamp. Booleans don't lerp — sampleAt
+   * snaps to whichever endpoint sample is temporally closer rather than
+   * interpolating — but it still needs to ride along in history rather
+   * than just reading "current" crouching, since server-side lag
+   * compensation rewinds a shot's target to a past instant and must use
+   * the hit-zone bands that applied THEN (see resolvePlayerHit's
+   * `crouching` param), not whatever the target's stance is now. */
+  crouching: boolean;
 }
 
 /**
@@ -49,6 +57,7 @@ export class PositionHistory {
           time,
           position: lerp(a.position, b.position, t),
           yaw: lerpAngle(a.yaw, b.yaw, t),
+          crouching: t < 0.5 ? a.crouching : b.crouching,
         };
       }
     }

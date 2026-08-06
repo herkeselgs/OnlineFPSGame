@@ -44,6 +44,42 @@ export const JUMP_SPEED = 7.8;
  * collision being axis-aligned boxes only (no sloped ramps). */
 export const STEP_HEIGHT = 0.55;
 
+// --- Sprint ---
+/** Forward-biased hold-to-sprint (see PlayerInputTick.sprint) multiplies
+ * MOVE_SPEED while grounded, not crouching, and moving mostly forward — no
+ * stamina meter, this is a movement-skill layer, not a resource to manage. */
+export const SPRINT_SPEED_MULTIPLIER = 1.5;
+
+// --- Crouch ---
+/** Collider height while crouched (vs PLAYER_HEIGHT's 1.8m) — the box
+ * shrinks with the FEET held fixed (see stepPlayerMovement), so standing
+ * back up re-checks headroom before growing back, same as any real crouch
+ * hull swap. */
+export const CROUCH_HEIGHT = 1.1;
+export const CROUCH_HALF_EXTENTS = {
+  x: PLAYER_RADIUS,
+  y: CROUCH_HEIGHT / 2,
+  z: PLAYER_RADIUS,
+};
+/** Eye height above the feet while crouched (vs PLAYER_EYE_HEIGHT's 1.62m) —
+ * its own tuned constant rather than a ratio of PLAYER_EYE_HEIGHT, same as
+ * the standing constant isn't derived from PLAYER_HEIGHT either. */
+export const CROUCH_EYE_HEIGHT = 0.95;
+export const CROUCH_SPEED_MULTIPLIER = 0.5;
+
+// --- Slide ---
+/** Crouching while grounded and moving faster than this (i.e. sprinting)
+ * slides instead of instantly clamping down to crouch-walk speed — see
+ * stepPlayerMovement's `sliding` branch. Sits strictly between walk speed
+ * and sprint speed so a normal walk-then-crouch never triggers one. */
+export const SLIDE_MIN_SPEED = 7.2;
+/** Friction applied to horizontal speed while sliding — well below
+ * GROUND_FRICTION so momentum carries for a beat instead of stopping like a
+ * normal crouch-braking would. Sliding is a pure function of velocity +
+ * crouching each tick (no separate timer/mode), so it naturally ends the
+ * instant decayed speed drops back to crouch-walk pace. */
+export const SLIDE_FRICTION = 2.0;
+
 // --- Ladder climbing ---
 /** Vertical speed while climbing, roughly matching normal walk speed so
  * ladders don't feel like a shortcut or a penalty. */
@@ -76,6 +112,18 @@ export const HEADSHOT_DAMAGE_MULTIPLIER = 2;
 // torso, not above or below it).
 export const LEG_BAND_MAX_Y = -0.15; // hip line; below this is legs, at/above (up to HEAD_BAND_MIN_Y) is torso/arms
 export const ARM_ZONE_HALF_WIDTH = 0.2; // x half-extent of each arm box
+
+// --- Crouch hit-zone bands ---
+// A crouched target's head/torso/leg boxes must shrink along with the
+// smaller collider or the head band would poke out past the top of the
+// (shorter) crouched box entirely. Scaled from the standing bands by the
+// same ratio the collider itself shrinks by, rather than hand-tuned —
+// keeps the crouched zones proportioned the same way the standing ones are
+// without a second set of magic numbers to keep in sync by eye.
+const CROUCH_BAND_SCALE = CROUCH_HALF_EXTENTS.y / PLAYER_HALF_EXTENTS.y;
+export const CROUCH_HEAD_BAND_MIN_Y = HEAD_BAND_MIN_Y * CROUCH_BAND_SCALE;
+export const CROUCH_HEAD_BAND_MAX_Y = CROUCH_HALF_EXTENTS.y;
+export const CROUCH_LEG_BAND_MAX_Y = LEG_BAND_MAX_Y * CROUCH_BAND_SCALE;
 /** Limb hits (arms/legs) deal reduced damage relative to the torso baseline
  * — a real hit, just not center-mass. Headshot is 2x baseline; this is
  * 0.7x, so trading a body shot for a limb shot is never advantageous, but a
