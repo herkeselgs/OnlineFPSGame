@@ -1,11 +1,24 @@
 import { MapDefinition } from "@fps/shared";
 import * as THREE from "three";
+import { applyBastionTheme } from "./BastionDetails";
 import { applyFoundryTheme } from "./FoundryDetails";
+import { applyOutpostTheme } from "./OutpostDetails";
 
 export interface BuiltMapScene {
   meshes: THREE.Mesh[];
   dispose(): void;
 }
+
+/** Per-map visual dressing (textures, decorative props, extra lighting) —
+ * one module per map id, each free to give its map a distinct look since
+ * none of them touch collision (see each file's comment). Keyed by id
+ * rather than an if/else chain so adding a future map's theme is a
+ * one-line addition here. */
+const MAP_THEMES: Record<string, (scene: THREE.Scene, meshes: THREE.Mesh[]) => { dispose(): void }> = {
+  "test-arena": applyFoundryTheme,
+  bastion: applyBastionTheme,
+  outpost: applyOutpostTheme,
+};
 
 /**
  * Builds the low-poly render geometry for a map directly from the shared
@@ -92,11 +105,9 @@ export function buildMapScene(scene: THREE.Scene, map: MapDefinition): BuiltMapS
     }
   }
 
-  // Foundry-only visual dressing (textures, props, extra lighting) — a
-  // separate module gated by map id so Bastion/Outpost's rendering is
-  // completely untouched. Runs after the base meshes above exist since it
-  // re-skins their materials and reads their sizes/positions.
-  const foundryTheme = map.id === "test-arena" ? applyFoundryTheme(scene, meshes) : null;
+  // Runs after the base meshes above exist since each theme re-skins their
+  // materials and reads their sizes/positions.
+  const theme = MAP_THEMES[map.id]?.(scene, meshes) ?? null;
 
   return {
     meshes,
@@ -108,7 +119,7 @@ export function buildMapScene(scene: THREE.Scene, map: MapDefinition): BuiltMapS
       geometry.dispose();
       ladderMaterial.dispose();
       for (const mat of materialCache.values()) mat.dispose();
-      foundryTheme?.dispose();
+      theme?.dispose();
     },
   };
 }

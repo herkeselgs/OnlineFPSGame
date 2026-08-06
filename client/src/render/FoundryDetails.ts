@@ -90,7 +90,11 @@ export function applyFoundryTheme(scene: THREE.Scene, meshes: THREE.Mesh[]): { d
     } else if (kind === "cover") {
       material = mat({ map: tiled(crateTex, Math.max(w, d), h, TILE_M * 0.7) });
     } else if (kind === "platform" || kind === "ramp") {
-      material = mat({ map: tiled(plateTex, Math.max(w, d), Math.max(w, d), TILE_M * 0.6) });
+      // Top-face dominant (stood on) — (w,d), not a height-based repeat
+      // (diamond plate is isotropic so this was never visibly wrong here,
+      // unlike the directional brick/plank patterns Bastion caught it on,
+      // but the correct dimensions are still (w,d)).
+      material = mat({ map: tiled(plateTex, w, d, TILE_M * 0.6) });
     }
 
     if (material) mesh.material = material;

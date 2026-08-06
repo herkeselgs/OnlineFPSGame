@@ -143,6 +143,133 @@ export function buildFloorTexture(baseColor: string, jointColor: string): THREE.
   return finish(canvas);
 }
 
+/** Sandstone/masonry brick coursing: offset rows of mortared blocks plus
+ * mottled weathering noise. Used for Bastion's stone walls/floor/platform
+ * bases. */
+export function buildBrickTexture(baseColor: string, mortarColor: string): THREE.CanvasTexture {
+  const { canvas, ctx } = makeCanvas();
+  ctx.fillStyle = mortarColor;
+  ctx.fillRect(0, 0, TILE_PX, TILE_PX);
+
+  const rows = 4;
+  const rowH = TILE_PX / rows;
+  const bricksPerRow = 3;
+  const brickW = TILE_PX / bricksPerRow;
+  const mortarGap = 3;
+  for (let r = 0; r < rows; r++) {
+    const offset = r % 2 === 0 ? 0 : -brickW / 2;
+    for (let b = -1; b <= bricksPerRow; b++) {
+      const x = b * brickW + offset;
+      const y = r * rowH;
+      ctx.fillStyle = baseColor;
+      ctx.fillRect(x + mortarGap / 2, y + mortarGap / 2, brickW - mortarGap, rowH - mortarGap);
+    }
+  }
+
+  // Weathering: mottled noise blotches, mostly darkening.
+  for (let i = 0; i < 90; i++) {
+    const x = Math.random() * TILE_PX;
+    const y = Math.random() * TILE_PX;
+    const r = 2 + Math.random() * 5;
+    ctx.globalAlpha = 0.06 + Math.random() * 0.06;
+    ctx.fillStyle = Math.random() > 0.3 ? "#000000" : "#ffffff";
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  return finish(canvas);
+}
+
+/** Wood planking: vertical boards with grain streaks and a seam between
+ * each — used for Bastion's stair treads and crate lids. */
+export function buildWoodPlankTexture(baseColor: string, grainColor: string): THREE.CanvasTexture {
+  const { canvas, ctx } = makeCanvas();
+  ctx.fillStyle = baseColor;
+  ctx.fillRect(0, 0, TILE_PX, TILE_PX);
+
+  const planks = 4;
+  const plankW = TILE_PX / planks;
+  for (let p = 0; p < planks; p++) {
+    const x = p * plankW;
+    // Grain streaks within the plank.
+    ctx.globalAlpha = 0.1;
+    ctx.strokeStyle = grainColor;
+    for (let i = 0; i < 5; i++) {
+      const gy = Math.random() * TILE_PX;
+      ctx.beginPath();
+      ctx.moveTo(x + 2, gy);
+      ctx.lineTo(x + plankW - 2, gy + (Math.random() - 0.5) * 14);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+    // Seam between planks.
+    ctx.strokeStyle = grainColor;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, TILE_PX);
+    ctx.stroke();
+  }
+
+  return finish(canvas);
+}
+
+/** A grubbier riveted panel for weathered/industrial-outdoor surfaces:
+ * same seam+rivet base as buildPanelTexture, with randomized rust-drip
+ * streaks running down from the top. Used for Outpost's exterior walls and
+ * tower structure. */
+export function buildWeatheredPanelTexture(baseColor: string, seamColor: string, rivetColor: string, rustColor: string): THREE.CanvasTexture {
+  const { canvas, ctx } = makeCanvas();
+  ctx.fillStyle = baseColor;
+  ctx.fillRect(0, 0, TILE_PX, TILE_PX);
+
+  ctx.globalAlpha = 0.05;
+  ctx.strokeStyle = "#ffffff";
+  for (let i = 0; i < 18; i++) {
+    const y = (i / 18) * TILE_PX + Math.random() * 4;
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(TILE_PX, y + (Math.random() - 0.5) * 6);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+
+  ctx.strokeStyle = seamColor;
+  ctx.lineWidth = 3;
+  ctx.strokeRect(1.5, 1.5, TILE_PX - 3, TILE_PX - 3);
+
+  ctx.fillStyle = rivetColor;
+  const inset = 10;
+  for (const [rx, ry] of [
+    [inset, inset],
+    [TILE_PX - inset, inset],
+    [inset, TILE_PX - inset],
+    [TILE_PX - inset, TILE_PX - inset],
+  ]) {
+    ctx.beginPath();
+    ctx.arc(rx, ry, 3.2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Rust-drip streaks, tapering and fading as they run down.
+  for (let i = 0; i < 4; i++) {
+    const x = 15 + Math.random() * (TILE_PX - 30);
+    const startY = Math.random() * TILE_PX * 0.4;
+    const len = TILE_PX * (0.3 + Math.random() * 0.4);
+    const grad = ctx.createLinearGradient(x, startY, x, startY + len);
+    grad.addColorStop(0, rustColor);
+    grad.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.globalAlpha = 0.35;
+    ctx.fillStyle = grad;
+    ctx.fillRect(x - 1.5, startY, 3, len);
+    ctx.globalAlpha = 1;
+  }
+
+  return finish(canvas);
+}
+
 /** Diagonal yellow/black hazard stripe band — used as a thin accent strip
  * near platform edges, the pillar's base, and cover prop trim. */
 export function buildHazardStripeTexture(): THREE.CanvasTexture {
