@@ -7,6 +7,7 @@ import {
   PositionHistory,
   LAG_COMP_HISTORY_MS,
   STAMINA_MAX,
+  TeamId,
   WeaponState,
 } from "@fps/shared";
 import { randomUUID } from "node:crypto";
@@ -23,6 +24,10 @@ export interface PlayerSession {
    * socket can reattach to this exact session instead of joining as a new
    * player — see Room.rejoin(). Never sent to the other player. */
   reconnectToken: string;
+  /** Only set (non-null) in a team5v5 room — assigned once at join time by
+   * Room.addPlayer's balancing logic and never changes for the rest of the
+   * session. Always null in a Duel room. */
+  team: TeamId | null;
 
   physics: PlayerPhysicsState;
   yaw: number;
@@ -56,6 +61,7 @@ export function createPlayerSession(id: PlayerId, ws: WebSocket, name: string, c
     ready: false,
     connected: true,
     reconnectToken: randomUUID(),
+    team: null,
     physics: {
       position: { x: 0, y: 0, z: 0 },
       velocity: { x: 0, y: 0, z: 0 },

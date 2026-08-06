@@ -5,6 +5,7 @@ import {
   PlayerId,
   PlayerSnapshot,
   RESPAWN_TIME_MS,
+  RoomMode,
   ServerMessage,
   SpawnPoint,
   STAMINA_LOW_THRESHOLD,
@@ -65,7 +66,8 @@ export class MatchController {
     mapMeshes: THREE.Mesh[],
     spawn: SpawnPoint,
     colliders: readonly BoxCollider[],
-    ladders: readonly BoxCollider[] = []
+    ladders: readonly BoxCollider[] = [],
+    private mode: RoomMode = "duel"
   ) {
     this.playerNames = playerNames;
     this.prediction = new PredictionController(spawn, colliders, input, net, camera, ladders);
@@ -188,7 +190,8 @@ export class MatchController {
         p.kills,
         p.deaths,
         p.reloading,
-        p.crouching
+        p.crouching,
+        p.team ?? null
       );
     }
   }
@@ -277,15 +280,30 @@ export class MatchController {
   }
 
   private updateScoreAndTimer(): void {
-    const selfName = "You";
-    let oppName = "Opponent";
-    let oppKills = 0;
-    for (const rp of this.remotePlayersMap.values()) {
-      oppName = rp.name;
-      oppKills = rp.kills;
-      break;
+    if (this.mode === "team5v5") {
+      // Sum kills across everyone on each side (self + every remote player
+      // sharing that team), rather than the single-opponent 1v1 readout —
+      // team5v5 can have up to 9 other players, not one.
+      let teamAKills = 0;
+      let teamBKills = 0;
+      if (this.prediction.team === "A") teamAKills += this.prediction.combat.kills;
+      else if (this.prediction.team === "B") teamBKills += this.prediction.combat.kills;
+      for (const rp of this.remotePlayersMap.values()) {
+        if (rp.team === "A") teamAKills += rp.kills;
+        else if (rp.team === "B") teamBKills += rp.kills;
+      }
+      this.hud.updateScore("Team A", teamAKills, "Team B", teamBKills);
+    } else {
+      const selfName = "You";
+      let oppName = "Opponent";
+      let oppKills = 0;
+      for (const rp of this.remotePlayersMap.values()) {
+        oppName = rp.name;
+        oppKills = rp.kills;
+        break;
+      }
+      this.hud.updateScore(selfName, this.prediction.combat.kills, oppName, oppKills);
     }
-    this.hud.updateScore(selfName, this.prediction.combat.kills, oppName, oppKills);
 
     if (this.matchDurationMs > 0) {
       const elapsed = this.clock.estimateServerTime() - this.matchStartServerTime;

@@ -6,6 +6,7 @@ import {
   LAG_COMP_HISTORY_MS,
   legHitBox,
   PositionHistory,
+  TeamId,
   Vec3,
   WeaponId,
 } from "@fps/shared";
@@ -47,6 +48,9 @@ export class RemotePlayer {
   weapon: WeaponId = "rifle";
   kills = 0;
   deaths = 0;
+  /** Only set in a team5v5 match — used by MatchController to aggregate
+   * the team score shown in the HUD. */
+  team: TeamId | null = null;
 
   private history = new PositionHistory(LAG_COMP_HISTORY_MS);
   private geometry: THREE.CapsuleGeometry;
@@ -117,7 +121,8 @@ export class RemotePlayer {
     kills: number,
     deaths: number,
     reloading: boolean,
-    crouching: boolean
+    crouching: boolean,
+    team: TeamId | null
   ): void {
     this.history.push({ time: serverTimeMs, position, yaw, crouching });
     if (health < this.lastHealth && alive) this.character.flashHit();
@@ -127,6 +132,7 @@ export class RemotePlayer {
     this.weapon = weapon;
     this.kills = kills;
     this.deaths = deaths;
+    this.team = team;
     this.lastVelocity = velocity;
     this.lastPitch = pitch;
     this.reloading = reloading;

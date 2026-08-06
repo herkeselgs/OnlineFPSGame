@@ -1,4 +1,15 @@
-import { colorForCosmetic, MAP_ORDER, MAPS, MapDefinition, MatchScoreEntry, PlayerId, ServerMessage } from "@fps/shared";
+import {
+  colorForCosmetic,
+  MAP_ORDER,
+  MAPS,
+  MapDefinition,
+  MatchScoreEntry,
+  PlayerId,
+  RoomMode,
+  ServerMessage,
+  TEAM_SIZE_MAX,
+  TeamId,
+} from "@fps/shared";
 import * as THREE from "three";
 import { soundEngine } from "../audio/SoundEngine";
 import { MatchController } from "../game/MatchController";
@@ -77,6 +88,8 @@ export class MultiplayerFlow {
   private selfId: PlayerId | null = null;
   private roomCode: string | null = null;
   private playerNames = new Map<PlayerId, string>();
+  private playerTeams = new Map<PlayerId, TeamId>();
+  private roomMode: RoomMode = "duel";
   private match: MatchController | null = null;
   private unsubscribe: (() => void) | null = null;
   private countdownTimer: ReturnType<typeof setInterval> | null = null;
@@ -87,6 +100,7 @@ export class MultiplayerFlow {
   private screenCountdown = el("screen-countdown");
   private screenResults = el("screen-results");
   private nameInput = el<HTMLInputElement>("player-name");
+  private roomModeSelect = el<HTMLSelectElement>("room-mode-select");
   private joinCodeInput = el<HTMLInputElement>("join-code-input");
   private menuError = el("menu-error");
   private lobbyCode = el("lobby-code");
@@ -196,7 +210,8 @@ export class MultiplayerFlow {
     const name = this.nameInput.value.trim() || randomDefaultName();
     profileStore.setName(name);
     const color = colorForCosmetic(profileStore.get().cosmeticId);
-    this.connectThen(() => this.net.send({ type: "create_room", name, color }));
+    const mode = (this.roomModeSelect.value as RoomMode) || "duel";
+    this.connectThen(() => this.net.send({ type: "create_room", name, color, mode }));
   }
 
   private joinRoom(rawCode: string): void {
@@ -260,8 +275,13 @@ export class MultiplayerFlow {
       case "lobby_update":
         this.lobbyPhase = msg.phase;
         this.currentMapId = msg.mapId;
+        this.roomMode = msg.mode;
         this.playerNames.clear();
-        for (const p of msg.players) this.playerNames.set(p.id, p.name);
+        this.playerTeams.clear();
+        for (const p of msg.players) {
+          this.playerNames.set(p.id, p.name);
+          if (p.team) this.playerTeams.set(p.id, p.team);
+        }
         this.renderLobby(msg.players);
         this.highlightSelectedMap();
         break;
@@ -272,7 +292,7 @@ export class MultiplayerFlow {
         this.startMatch(msg.mapId);
         break;
       case "match_ended":
-        this.showResults(msg.scores, msg.winnerId);
+        this.showResults(msg.scores, msg.winnerId, msg.winnerTeam);
         break;
       default:
         break;
@@ -298,9 +318,25 @@ export class MultiplayerFlow {
     this.readyBtn.textContent = "Ready";
   }
 
-  private renderLobby(players: { id: PlayerId; name: string; color: number; ready: boolean }[]): void {
+  private renderLobby(players: { id: PlayerId; name: string; color: number; ready: boolean; team?: TeamId }[]): void {
     this.lobbyPlayers.innerHTML = "";
-    for (const p of players) {
+    // Grouped by team (A first, then B) in team5v5 so the two sides read as
+    // two rosters rather than one flat interleaved list; a plain single
+    // list in Duel (team is always undefined there).
+    const ordered =
+      this.roomMode === "team5v5"
+        ? [...players].sort((a, b) => (a.team === b.team ? 0 : a.team === "A" ? -1 : 1))
+        : players;
+    let lastTeam: TeamId | undefined;
+    for (const p of ordered) {
+      if (this.roomMode === "team5v5" && p.team !== lastTeam) {
+        lastTeam = p.team;
+        const heading = document.createElement("div");
+        heading.className = "lobby-team-heading";
+        heading.textContent = `Team ${p.team} (${ordered.filter((o) => o.team === p.team).length}/${TEAM_SIZE_MAX})`;
+        this.lobbyPlayers.appendChild(heading);
+      }
+
       const row = document.createElement("div");
       row.className = "lobby-player-row";
 
@@ -323,7 +359,7 @@ export class MultiplayerFlow {
     if (players.length < 2) {
       const row = document.createElement("div");
       row.className = "lobby-player-row";
-      row.textContent = "Waiting for opponent to join...";
+      row.textContent = this.roomMode === "team5v5" ? "Waiting for teammates/opponents to join..." : "Waiting for opponent to join...";
       this.lobbyPlayers.appendChild(row);
     }
   }
@@ -361,7 +397,13 @@ export class MultiplayerFlow {
     this.lockOverlay.classList.add("hidden");
     if (this.match) this.match.dispose();
     const { map, meshes } = this.loadMap(mapId);
-    const spawn = map.spawns[0];
+    // Just the initial local guess before the server's first authoritative
+    // snapshot corrects it (see PredictionController.applyServerSnapshot) —
+    // picking the right side's spawn here isn't load-bearing, but avoids a
+    // one-frame pop from spawning on the wrong team's side.
+    const selfTeam = this.selfId ? this.playerTeams.get(this.selfId) : undefined;
+    const spawn =
+      this.roomMode === "team5v5" ? map.teamSpawns[selfTeam === "B" ? "b" : "a"][0] : map.spawns[0];
     this.match = new MatchController(
       this.scene,
       this.camera,
@@ -373,13 +415,14 @@ export class MultiplayerFlow {
       meshes,
       spawn,
       map.blocks,
-      map.ladders
+      map.ladders,
+      this.roomMode
     );
     this.onMatchActiveChange(this.match);
     soundEngine.startAmbient();
   }
 
-  private showResults(scores: MatchScoreEntry[], winnerId: PlayerId | null): void {
+  private showResults(scores: MatchScoreEntry[], winnerId: PlayerId | null, winnerTeam?: TeamId | null): void {
     soundEngine.stopAmbient();
     if (this.match) {
       this.match.dispose();
@@ -388,18 +431,39 @@ export class MultiplayerFlow {
     }
     this.hideAllScreens();
     this.screenResults.classList.remove("hidden");
-    const won = winnerId === this.selfId;
-    this.resultsTitle.textContent = won ? "Victory!" : winnerId ? "Defeat" : "Match Over";
+
+    const isTeamMatch = this.roomMode === "team5v5";
+    const selfTeam = this.selfId ? this.playerTeams.get(this.selfId) : undefined;
+    const won = isTeamMatch ? winnerTeam != null && winnerTeam === selfTeam : winnerId === this.selfId;
+    const isDraw = isTeamMatch ? winnerTeam == null : winnerId === null;
+    this.resultsTitle.textContent = isTeamMatch
+      ? isDraw
+        ? "Match Over"
+        : won
+          ? "Your Team Wins!"
+          : "Your Team Loses"
+      : won
+        ? "Victory!"
+        : winnerId
+          ? "Defeat"
+          : "Match Over";
 
     this.resultsScores.innerHTML = "";
     for (const s of [...scores].sort((a, b) => b.kills - a.kills)) {
       const row = document.createElement("div");
-      row.className = "results-score-row" + (s.id === winnerId ? " is-winner" : "");
-      const label = s.id === this.selfId ? `${s.name} (you)` : s.name;
+      const isWinnerRow = isTeamMatch ? s.team !== undefined && s.team === winnerTeam : s.id === winnerId;
+      row.className = "results-score-row" + (isWinnerRow ? " is-winner" : "");
+      const teamTag = isTeamMatch && s.team ? ` [Team ${s.team}]` : "";
+      const label = (s.id === this.selfId ? `${s.name} (you)` : s.name) + teamTag;
       const accuracy = s.shotsFired > 0 ? Math.round((s.shotsHit / s.shotsFired) * 100) : 0;
       row.innerHTML = `<span>${label}</span><span>${s.kills} K / ${s.deaths} D &middot; ${accuracy}% acc &middot; ${s.damageDealt} dmg</span>`;
       this.resultsScores.appendChild(row);
     }
+
+    // Career match history / rivalry / XP tracking assumes a single named
+    // Duel opponent — skip it for team5v5 rather than stretch that schema
+    // to cover up to 9 teammates/opponents at once.
+    if (isTeamMatch) return;
 
     const self = scores.find((s) => s.id === this.selfId);
     if (self) {

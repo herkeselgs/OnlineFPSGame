@@ -35,7 +35,16 @@ export interface MapDefinition {
   ambientIntensity: number;
   blocks: MapBlock[];
   ladders: LadderZone[];
+  /** Used by Duel (2 players — index 0/1 map directly to the two sides). */
   spawns: SpawnPoint[];
+  /** Used by team 5v5 — one small cluster per side rather than a single
+   * point, so up to TEAM_SIZE_MAX players on the same team don't spawn
+   * stacked on top of each other. Hand-placed near (and reusing the facing
+   * angle of) each map's existing Duel spawn corner, checked clear of that
+   * corner's actual geometry — not a generic offset grid, since a couple of
+   * these maps (Bastion's stairs, Outpost's ladder towers) have real
+   * obstacles close to the original spawn point. */
+  teamSpawns: { a: SpawnPoint[]; b: SpawnPoint[] };
 }
 
 function box(
@@ -95,6 +104,24 @@ export const TEST_ARENA: MapDefinition = {
     { position: { x: -18, y: 1.2, z: 8 }, yaw: -2.35 },
     { position: { x: 18, y: 1.2, z: -8 }, yaw: 0.79 },
   ],
+  teamSpawns: {
+    // All clear of the platform colliders (x: -16.5..-11.5 / 11.5..16.5)
+    // and side cover boxes (x: -7.5..-4.5, z: +/-4).
+    a: [
+      { position: { x: -18, y: 1.2, z: 8 }, yaw: -2.35 },
+      { position: { x: -18, y: 1.2, z: 11 }, yaw: -2.35 },
+      { position: { x: -18, y: 1.2, z: 5 }, yaw: -2.35 },
+      { position: { x: -15, y: 1.2, z: 10 }, yaw: -2.35 },
+      { position: { x: -15, y: 1.2, z: 6 }, yaw: -2.35 },
+    ],
+    b: [
+      { position: { x: 18, y: 1.2, z: -8 }, yaw: 0.79 },
+      { position: { x: 18, y: 1.2, z: -11 }, yaw: 0.79 },
+      { position: { x: 18, y: 1.2, z: -5 }, yaw: 0.79 },
+      { position: { x: 15, y: 1.2, z: -10 }, yaw: 0.79 },
+      { position: { x: 15, y: 1.2, z: -6 }, yaw: 0.79 },
+    ],
+  },
 };
 
 /**
@@ -150,6 +177,24 @@ export const BASTION: MapDefinition = {
     { position: { x: -8, y: 1.2, z: 8 }, yaw: -0.785 },
     { position: { x: 8, y: 1.2, z: -8 }, yaw: 2.356 },
   ],
+  teamSpawns: {
+    // Clear of the west platform/stairs (x: -19..-8, z: -4..4) and the low/
+    // mid cover boxes, spread across the open ground east of the stairs.
+    a: [
+      { position: { x: -8, y: 1.2, z: 8 }, yaw: -0.785 },
+      { position: { x: -8, y: 1.2, z: 11 }, yaw: -0.785 },
+      { position: { x: -5, y: 1.2, z: 9 }, yaw: -0.785 },
+      { position: { x: -5, y: 1.2, z: 12 }, yaw: -0.785 },
+      { position: { x: -9.5, y: 1.2, z: 11 }, yaw: -0.785 },
+    ],
+    b: [
+      { position: { x: 8, y: 1.2, z: -8 }, yaw: 2.356 },
+      { position: { x: 8, y: 1.2, z: -11 }, yaw: 2.356 },
+      { position: { x: 5, y: 1.2, z: -9 }, yaw: 2.356 },
+      { position: { x: 5, y: 1.2, z: -12 }, yaw: 2.356 },
+      { position: { x: 9.5, y: 1.2, z: -11 }, yaw: 2.356 },
+    ],
+  },
 };
 
 /**
@@ -246,6 +291,24 @@ export const OUTPOST: MapDefinition = {
     { position: { x: -18, y: 1.2, z: 9 }, yaw: -2.35 },
     { position: { x: 18, y: 1.2, z: -9 }, yaw: 0.79 },
   ],
+  teamSpawns: {
+    // Clear of both towers (x: -14.4..-13.6 / 13.6..14.4), the tunnel
+    // channel (x: -4..4), and each side's courtyard cover box.
+    a: [
+      { position: { x: -18, y: 1.2, z: 9 }, yaw: -2.35 },
+      { position: { x: -18, y: 1.2, z: 12 }, yaw: -2.35 },
+      { position: { x: -18, y: 1.2, z: 6 }, yaw: -2.35 },
+      { position: { x: -16, y: 1.2, z: 11 }, yaw: -2.35 },
+      { position: { x: -16, y: 1.2, z: 7 }, yaw: -2.35 },
+    ],
+    b: [
+      { position: { x: 18, y: 1.2, z: -9 }, yaw: 0.79 },
+      { position: { x: 18, y: 1.2, z: -12 }, yaw: 0.79 },
+      { position: { x: 18, y: 1.2, z: -6 }, yaw: 0.79 },
+      { position: { x: 16, y: 1.2, z: -11 }, yaw: 0.79 },
+      { position: { x: 16, y: 1.2, z: -7 }, yaw: 0.79 },
+    ],
+  },
 };
 
 export const MAPS: Record<string, MapDefinition> = {

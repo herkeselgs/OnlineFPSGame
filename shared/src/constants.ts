@@ -168,6 +168,18 @@ export const MATCH_SCORE_LIMIT = 20;
 export const MATCH_COUNTDOWN_MS = 3000;
 export const RESULTS_DISPLAY_MS = 8000;
 
+// --- Team mode (5v5) ---
+/** Players per side — a room caps at twice this. Kept as one named constant
+ * rather than a hardcoded "5" scattered through Room.ts/maps.ts, even
+ * though the mode is always 5v5 today, since every spot that reads it
+ * (room capacity, team-spawn pool size, lobby "waiting for Nv N" text)
+ * should move together if that ever changes. */
+export const TEAM_SIZE_MAX = 5;
+/** Win condition is the SUM of a team's players' kills, not any one
+ * player's — set well above MATCH_SCORE_LIMIT (20) since five players
+ * contribute to it at once, so a match doesn't end almost immediately. */
+export const TEAM_MATCH_SCORE_LIMIT = 40;
+
 // --- Room codes ---
 // Unambiguous charset: no 0/O, 1/I/l — easy to read aloud or text.
 export const ROOM_CODE_CHARSET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";

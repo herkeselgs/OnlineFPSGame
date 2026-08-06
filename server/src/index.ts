@@ -46,7 +46,7 @@ wss.on("connection", (socket: WebSocket) => {
     }
 
     if (msg.type === "create_room") {
-      const room = roomManager.createRoom();
+      const room = roomManager.createRoom(msg.mode ?? "duel");
       const id = room.addPlayer(socket, msg.name, msg.color);
       if (typeof id !== "string") {
         socket.send(JSON.stringify({ type: "room_error", message: id.error }));

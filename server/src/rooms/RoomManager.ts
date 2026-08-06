@@ -1,16 +1,16 @@
-import { ROOM_CODE_CHARSET, ROOM_CODE_LENGTH } from "@fps/shared";
+import { ROOM_CODE_CHARSET, ROOM_CODE_LENGTH, RoomMode } from "@fps/shared";
 import { Room } from "./Room.js";
 
 export class RoomManager {
   private rooms = new Map<string, Room>();
 
-  createRoom(): Room {
+  createRoom(mode: RoomMode = "duel"): Room {
     let code: string;
     do {
       code = this.generateCode();
     } while (this.rooms.has(code));
 
-    const room = new Room(code, () => this.rooms.delete(code));
+    const room = new Room(code, mode, () => this.rooms.delete(code));
     this.rooms.set(code, room);
     return room;
   }

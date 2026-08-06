@@ -640,6 +640,21 @@ html, body {
   font-size: 12px;
 }
 
+/* team5v5 lobby only — separates the two rosters within the same
+ * lobby-players list rather than needing two side-by-side panels. */
+.lobby-team-heading {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #9fb0c0;
+  margin: 10px 0 2px;
+}
+
+.lobby-team-heading:first-child {
+  margin-top: 0;
+}
+
 .countdown-number {
   font-size: 160px;
   font-weight: 800;

@@ -10,6 +10,7 @@ import {
   SpawnPoint,
   STAMINA_MAX,
   stepPlayerMovement,
+  TeamId,
   WeaponDef,
   WeaponId,
   WeaponState,
@@ -54,6 +55,9 @@ export class PredictionController {
   pitch = 0;
   weapon = new WeaponState();
   combat: PlayerCombatState = createPlayerCombatState();
+  /** Only set in a team5v5 match, from the server's snapshot — the local
+   * player never picks a side itself, Room.addPlayer's balancing does. */
+  team: TeamId | null = null;
 
   private seq = 0;
   private accumulator = 0;
@@ -247,6 +251,7 @@ export class PredictionController {
     this.combat.spawnProtectedUntil = entry.spawnProtectedUntil;
     this.combat.kills = entry.kills;
     this.combat.deaths = entry.deaths;
+    this.team = entry.team ?? null;
     this.weapon.syncFromServer(entry.weapon, entry.ammo, entry.reloading);
 
     this.physics = {

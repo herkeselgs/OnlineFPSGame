@@ -3,6 +3,14 @@ import { WeaponId } from "./weapons.js";
 
 export type PlayerId = string;
 
+/** Which side of a team-5v5 match a player is on — meaningless (always
+ * absent) for a Duel room, which has no team concept. */
+export type TeamId = "A" | "B";
+
+/** Picked once, at room creation — a joining player always inherits
+ * whatever mode the room they're joining already is. */
+export type RoomMode = "duel" | "team5v5";
+
 /** Sent once per fixed physics tick the client simulates (~60/s under a
  * healthy frame rate, fewer under load — the server just processes whatever
  * arrives). Movement AND fire/reload/switch requests all ride the same
@@ -36,7 +44,10 @@ export interface ClientInputMessage {
 }
 
 export type ClientMessage =
-  | { type: "create_room"; name: string; color: number }
+  /** `mode` defaults to "duel" server-side when omitted — older/simpler
+   * callers (and every existing test/tool that only knows about Duel)
+   * don't need to change. */
+  | { type: "create_room"; name: string; color: number; mode?: RoomMode }
   | { type: "join_room"; code: string; name: string; color: number }
   /** Reattaches to a session the sender previously held in this room —
    * sent automatically after an unexpected socket drop (see NetClient's
@@ -56,6 +67,8 @@ export interface RoomPlayerSummary {
   connected: boolean;
   kills: number;
   deaths: number;
+  /** Only present in a team5v5 room. */
+  team?: TeamId;
 }
 
 export interface PlayerSnapshot {
@@ -77,6 +90,10 @@ export interface PlayerSnapshot {
   color: number;
   kills: number;
   deaths: number;
+  /** Only present in a team5v5 room; used both for friendly-fire skipping
+   * (client-side hit feedback only — the server is what actually enforces
+   * it) and for aggregating the team score shown in the HUD. */
+  team?: TeamId;
   /** Only meaningful to the player it belongs to — everyone else's entry is
    * ignored by every client except that one player, who uses it to discard
    * confirmed inputs and replay the rest during reconciliation. */
@@ -91,6 +108,7 @@ export interface MatchScoreEntry {
   shotsFired: number;
   shotsHit: number;
   damageDealt: number;
+  team?: TeamId;
 }
 
 export type MatchPhase = "lobby" | "countdown" | "active" | "ended";
@@ -104,7 +122,7 @@ export type ServerMessage =
    * when connected=false, and tells the UI how long the other player has
    * to reconnect before the match is scored a forfeit. */
   | { type: "opponent_connection"; id: PlayerId; connected: boolean; graceMs?: number }
-  | { type: "lobby_update"; phase: MatchPhase; players: RoomPlayerSummary[]; mapId: string }
+  | { type: "lobby_update"; phase: MatchPhase; players: RoomPlayerSummary[]; mapId: string; mode: RoomMode }
   | { type: "match_countdown"; startsAtServerTime: number }
   | { type: "match_started"; serverTime: number; mapId: string; durationMs: number }
   | {
@@ -124,6 +142,11 @@ export type ServerMessage =
       type: "match_ended";
       scores: MatchScoreEntry[];
       winnerId: PlayerId | null;
+      /** Set (possibly to null for a tie) only for a team5v5 match — a team
+       * match has no single "winning player" the way winnerId implies, so
+       * this is a separate field rather than repurposing winnerId's
+       * meaning. Duel matches never set this. */
+      winnerTeam?: TeamId | null;
     }
   | { type: "player_left"; id: PlayerId }
   | { type: "pong"; t: number; serverTime: number };

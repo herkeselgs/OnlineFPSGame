@@ -21,12 +21,17 @@ import {
   RESPAWN_TIME_MS,
   RESULTS_DISPLAY_MS,
   respawn,
+  RoomMode,
   RoomPlayerSummary,
+  SpawnPoint,
   ServerMessage,
   SIM_HZ,
   SNAPSHOT_HZ,
   STAMINA_MAX,
   stepPlayerMovement,
+  TEAM_MATCH_SCORE_LIMIT,
+  TEAM_SIZE_MAX,
+  TeamId,
   Vec3,
   WeaponDef,
   WeaponState,
@@ -36,15 +41,23 @@ import { WebSocket } from "ws";
 import { createPlayerSession, PlayerSession } from "./PlayerSession.js";
 
 const SNAPSHOT_EVERY_N_TICKS = Math.round(SIM_HZ / SNAPSHOT_HZ);
-const MAX_PLAYERS = 2; // 1v1 for now; room model below doesn't assume this beyond this one constant
+const DUEL_MAX_PLAYERS = 2;
 
 export class Room {
   readonly code: string;
+  readonly mode: RoomMode;
   phase: MatchPhase = "lobby";
   private mapId: string = DEFAULT_MAP_ID;
 
   get map() {
     return MAPS[this.mapId];
+  }
+
+  /** Room capacity — 2 for Duel, 2*TEAM_SIZE_MAX for team5v5. Doesn't
+   * assume any particular team split beyond that cap; addPlayer's
+   * balancing logic is what actually keeps the two sides even. */
+  get maxPlayers(): number {
+    return this.mode === "team5v5" ? TEAM_SIZE_MAX * 2 : DUEL_MAX_PLAYERS;
   }
 
   private players = new Map<PlayerId, PlayerSession>();
@@ -59,25 +72,56 @@ export class Room {
   private pauseStartedAt: number | null = null;
   private disconnectTimers = new Map<PlayerId, ReturnType<typeof setTimeout>>();
 
-  constructor(code: string, private onEmpty: () => void) {
+  constructor(code: string, mode: RoomMode, private onEmpty: () => void) {
     this.code = code;
+    this.mode = mode;
   }
 
   get playerCount(): number {
     return this.players.size;
   }
 
+  private teamCount(team: TeamId): number {
+    let n = 0;
+    for (const p of this.players.values()) if (p.team === team) n++;
+    return n;
+  }
+
+  /** The spawn point a given (team-assigned, if applicable) player should
+   * use — pulled from the map's team-spawn clusters in team5v5, or the
+   * plain 2-entry spawns array in Duel. Centralized here rather than
+   * duplicated at every call site (initial join, match start, respawn)
+   * since all three need to agree. */
+  private spawnFor(session: PlayerSession): SpawnPoint {
+    const index = this.spawnIndexByPlayer.get(session.id) ?? 0;
+    if (this.mode === "team5v5" && session.team) {
+      const pool = session.team === "A" ? this.map.teamSpawns.a : this.map.teamSpawns.b;
+      return pool[index % pool.length];
+    }
+    return this.map.spawns[index % this.map.spawns.length];
+  }
+
   addPlayer(ws: WebSocket, name: string, color: number): PlayerId | { error: string } {
-    if (this.players.size >= MAX_PLAYERS) return { error: "Room is full" };
+    if (this.players.size >= this.maxPlayers) return { error: "Room is full" };
     if (this.phase !== "lobby") return { error: "Match already in progress" };
 
     const id = randomUUID();
     const session = createPlayerSession(id, ws, name || "Player", color);
-    const spawnIndex = this.players.size % this.map.spawns.length;
-    const spawn = this.map.spawns[spawnIndex];
+    if (this.mode === "team5v5") {
+      // Whichever side currently has fewer players; ties go to A. Assigned
+      // once at join and fixed for the rest of the session — players don't
+      // switch sides mid-lobby.
+      session.team = this.teamCount("A") <= this.teamCount("B") ? "A" : "B";
+      // teamCount here is still pre-insertion (session isn't in `players`
+      // yet), so it's already the correct 0-indexed slot for this player —
+      // e.g. 2 existing A's -> this one is the 3rd -> index 2.
+      this.spawnIndexByPlayer.set(id, this.teamCount(session.team));
+    } else {
+      this.spawnIndexByPlayer.set(id, this.players.size % this.map.spawns.length);
+    }
+    const spawn = this.spawnFor(session);
     session.physics.position = { ...spawn.position };
     session.yaw = spawn.yaw;
-    this.spawnIndexByPlayer.set(id, spawnIndex);
     this.players.set(id, session);
     this.broadcastLobby();
     return id;
@@ -154,7 +198,13 @@ export class Room {
    * so the client's existing handling reconstructs the match with no
    * reconnect-specific client logic needed. */
   resendStateTo(id: PlayerId): void {
-    this.send(id, { type: "lobby_update", phase: this.phase, players: this.playersSummary(), mapId: this.mapId });
+    this.send(id, {
+      type: "lobby_update",
+      phase: this.phase,
+      players: this.playersSummary(),
+      mapId: this.mapId,
+      mode: this.mode,
+    });
     if (this.phase === "active") {
       this.send(id, {
         type: "match_started",
@@ -177,9 +227,16 @@ export class Room {
     this.spawnIndexByPlayer.delete(id);
     this.broadcast({ type: "player_left", id });
 
-    if (this.phase === "active" || this.phase === "countdown") {
+    // Duel only ever has 2 players, so any departure mid-match is
+    // automatically a forfeit. team5v5 shouldn't end the whole match just
+    // because one of up to 10 players dropped — only a fully-empty side
+    // (everyone on one team gone) forfeits; otherwise play continues with
+    // whoever's left (the already-broadcast player_left above is enough
+    // for clients to stop rendering them).
+    const forfeits = this.mode === "team5v5" ? this.teamCount("A") === 0 || this.teamCount("B") === 0 : true;
+
+    if ((this.phase === "active" || this.phase === "countdown") && forfeits) {
       const remaining = [...this.players.values()];
-      const winnerId = remaining.length === 1 ? remaining[0].id : null;
       // Include the leaving player's final stats too, not just whoever's
       // left — otherwise the remaining player's results screen (and
       // anything derived from it, like the opponent name recorded into
@@ -193,11 +250,18 @@ export class Room {
         shotsFired: p.shotsFired,
         shotsHit: p.shotsHit,
         damageDealt: p.damageDealt,
+        team: p.team ?? undefined,
       }));
       this.phase = "ended";
-      this.broadcast({ type: "match_ended", scores, winnerId });
+      if (this.mode === "team5v5") {
+        const winnerTeam: TeamId | null = this.teamCount("A") > 0 ? "A" : this.teamCount("B") > 0 ? "B" : null;
+        this.broadcast({ type: "match_ended", scores, winnerId: null, winnerTeam });
+      } else {
+        const winnerId = remaining.length === 1 ? remaining[0].id : null;
+        this.broadcast({ type: "match_ended", scores, winnerId });
+      }
       setTimeout(() => this.resetToLobby(), RESULTS_DISPLAY_MS);
-    } else {
+    } else if (this.phase !== "active" && this.phase !== "countdown") {
       this.broadcastLobby();
     }
 
@@ -262,7 +326,11 @@ export class Room {
 
   private maybeStartCountdown(): void {
     if (this.phase !== "lobby") return;
-    if (this.players.size < MAX_PLAYERS) return;
+    if (this.players.size < 2) return;
+    // Duel's cap (2) already forces an exact 1v1 once size>=2; team5v5 only
+    // needs both sides non-empty (2v2, 3v5, ... up to 5v5 all start fine —
+    // "still just rooms" doesn't require waiting for exactly 10 people).
+    if (this.mode === "team5v5" && (this.teamCount("A") === 0 || this.teamCount("B") === 0)) return;
     if (![...this.players.values()].every((p) => p.ready)) return;
 
     this.phase = "countdown";
@@ -274,9 +342,8 @@ export class Room {
     this.phase = "active";
     this.matchEndsAt = nowMs + MATCH_DURATION_MS;
 
-    for (const [id, session] of this.players) {
-      const spawnIndex = this.spawnIndexByPlayer.get(id) ?? 0;
-      const spawn = this.map.spawns[spawnIndex];
+    for (const session of this.players.values()) {
+      const spawn = this.spawnFor(session);
       session.physics = {
         position: { ...spawn.position },
         velocity: { x: 0, y: 0, z: 0 },
@@ -305,8 +372,7 @@ export class Room {
       this.drainInputs(session, nowMs);
 
       if (!session.combat.alive && nowMs >= session.respawnAtMs) {
-        const spawnIndex = this.spawnIndexByPlayer.get(session.id) ?? 0;
-        const spawn = this.map.spawns[spawnIndex];
+        const spawn = this.spawnFor(session);
         session.physics.position = { ...spawn.position };
         session.physics.velocity = { x: 0, y: 0, z: 0 };
         session.physics.onGround = false;
@@ -317,15 +383,28 @@ export class Room {
       }
     }
 
-    for (const session of this.players.values()) {
-      if (session.combat.kills >= MATCH_SCORE_LIMIT) {
+    if (this.mode === "team5v5") {
+      if (this.teamKills("A") >= TEAM_MATCH_SCORE_LIMIT || this.teamKills("B") >= TEAM_MATCH_SCORE_LIMIT) {
         this.endMatch();
         return;
+      }
+    } else {
+      for (const session of this.players.values()) {
+        if (session.combat.kills >= MATCH_SCORE_LIMIT) {
+          this.endMatch();
+          return;
+        }
       }
     }
     if (nowMs >= this.matchEndsAt) {
       this.endMatch();
     }
+  }
+
+  private teamKills(team: TeamId): number {
+    let n = 0;
+    for (const p of this.players.values()) if (p.team === team) n += p.combat.kills;
+    return n;
   }
 
   private drainInputs(session: PlayerSession, nowMs: number): void {
@@ -409,6 +488,9 @@ export class Room {
     let bestZone: HitZone = "torso";
     for (const [id, target] of this.players) {
       if (id === shooter.id || !target.combat.alive) continue;
+      // No friendly fire in team5v5 — shooter.team is only non-null there,
+      // so this is a no-op for Duel (every other player is always fair game).
+      if (shooter.team !== null && target.team === shooter.team) continue;
       const sample = target.history.sampleAt(rewindTime) ?? target.history.latest();
       if (!sample) continue;
 
@@ -466,11 +548,19 @@ export class Room {
       shotsFired: p.shotsFired,
       shotsHit: p.shotsHit,
       damageDealt: p.damageDealt,
+      team: p.team ?? undefined,
     }));
-    const sorted = [...scores].sort((a, b) => b.kills - a.kills);
-    const winnerId = sorted.length >= 1 && (sorted.length === 1 || sorted[0].kills > sorted[1].kills) ? sorted[0].id : null;
 
-    this.broadcast({ type: "match_ended", scores, winnerId });
+    if (this.mode === "team5v5") {
+      const a = this.teamKills("A");
+      const b = this.teamKills("B");
+      const winnerTeam: TeamId | null = a === b ? null : a > b ? "A" : "B";
+      this.broadcast({ type: "match_ended", scores, winnerId: null, winnerTeam });
+    } else {
+      const sorted = [...scores].sort((a, b) => b.kills - a.kills);
+      const winnerId = sorted.length >= 1 && (sorted.length === 1 || sorted[0].kills > sorted[1].kills) ? sorted[0].id : null;
+      this.broadcast({ type: "match_ended", scores, winnerId });
+    }
     setTimeout(() => this.resetToLobby(), RESULTS_DISPLAY_MS);
   }
 
@@ -491,11 +581,18 @@ export class Room {
       connected: p.connected,
       kills: p.combat.kills,
       deaths: p.combat.deaths,
+      team: p.team ?? undefined,
     }));
   }
 
   private broadcastLobby(): void {
-    this.broadcast({ type: "lobby_update", phase: this.phase, players: this.playersSummary(), mapId: this.mapId });
+    this.broadcast({
+      type: "lobby_update",
+      phase: this.phase,
+      players: this.playersSummary(),
+      mapId: this.mapId,
+      mode: this.mode,
+    });
   }
 
   private broadcastSnapshot(nowMs: number): void {
@@ -518,6 +615,7 @@ export class Room {
       color: p.color,
       kills: p.combat.kills,
       deaths: p.combat.deaths,
+      team: p.team ?? undefined,
       lastProcessedSeq: p.lastProcessedSeq,
     }));
     this.broadcast({ type: "snapshot", tick: this.tickCount, serverTime: nowMs, players });
