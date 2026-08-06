@@ -1,5 +1,6 @@
 import { CROUCH_HALF_EXTENTS, PLAYER_HALF_EXTENTS, WeaponId } from "@fps/shared";
 import * as THREE from "three";
+import { buildPanelTexture } from "./proceduralTextures";
 
 /**
  * Builds a low-poly articulated humanoid — head, chest, pelvis, two arms
@@ -43,14 +44,29 @@ const PELVIS_Y = -0.04;
 
 const SHOULDER_Y = 0.44;
 const SHOULDER_X = 0.32;
-const ARM_LENGTH = 0.46;
-const ARM_RADIUS = 0.075;
-const HAND_SIZE = { x: 0.11, y: 0.1, z: 0.16 };
+// Two segments with a real elbow bend (upper arm + forearm) instead of one
+// rigid rod — reads as an actual bent arm holding a gun in front of the
+// chest rather than a straight stick swung forward. Total reach
+// (0.21+0.27=0.48) is close to the old single segment's 0.46 so the hand
+// still lands near GUN_POSITION, but a bent reach is shorter than a
+// straight one of the same total length, so the shoulder/elbow angles
+// below are tuned by eye against screenshots (same as the old single-angle
+// version was) to bring the hand back to the gun grip.
+const UPPER_ARM_LENGTH = 0.21;
+const UPPER_ARM_RADIUS = 0.072;
+const FOREARM_LENGTH = 0.27;
+const FOREARM_RADIUS = 0.06;
+const HAND_SIZE = { x: 0.1, y: 0.085, z: 0.14 };
+const THUMB_SIZE = { x: 0.045, y: 0.045, z: 0.075 };
 // Forward-and-slightly-down, tilted inward toward the midline so both
 // hands converge near the gun instead of staying shoulder-width apart —
 // tuned by eye against screenshots, not derived analytically.
-const ARM_ROTATION_X = THREE.MathUtils.degToRad(68);
-const ARM_ROTATION_Z_MAG = THREE.MathUtils.degToRad(16);
+const SHOULDER_ROTATION_X = THREE.MathUtils.degToRad(38);
+const SHOULDER_ROTATION_Z_MAG = THREE.MathUtils.degToRad(14);
+/** Forearm bend relative to the upper arm — folds it forward/up to bring
+ * the hand back up to the gun instead of the whole arm hanging out
+ * straight at the shoulder's shallower angle. */
+const ELBOW_ROTATION_X = THREE.MathUtils.degToRad(58);
 
 const HIP_Y = -0.32;
 const HIP_X = 0.15;
@@ -89,6 +105,25 @@ function darken(hex: number, factor: number): number {
   const g = ((hex >> 8) & 0xff) * factor;
   const b = (hex & 0xff) * factor;
   return (Math.round(r) << 16) | (Math.round(g) << 8) | Math.round(b);
+}
+
+// Neutral (white-based) panel texture shared by every gun material across
+// every character/viewmodel instance — a Lambert material's final color is
+// map-sample * material.color, so keeping the texture itself neutral and
+// doing the actual gunmetal/accent tinting via each material's own `color`
+// lets one small shared texture serve rifle/smg/shotgun and every distinct
+// tint without per-instance regeneration. Never disposed: it's a tiny
+// (128x128) canvas meant to live for the whole page session, shared by
+// however many characters/viewmodels currently exist — disposing it when
+// any ONE of them tears down would break the GPU texture out from under
+// all the others still using it.
+let gunMetalTexture: THREE.CanvasTexture | null = null;
+function getGunMetalTexture(): THREE.CanvasTexture {
+  if (!gunMetalTexture) {
+    gunMetalTexture = buildPanelTexture("#ffffff", "#7a7a7a", "#dadada");
+    gunMetalTexture.repeat.set(2, 1);
+  }
+  return gunMetalTexture;
 }
 
 /** A limb segment: a cylinder whose geometry is pre-translated so it hangs
@@ -153,6 +188,13 @@ function buildGunAssembly(weaponId: WeaponId, gunMaterial: THREE.Material, gunAc
         { x: 0, y: -0.17, z: 0.02 },
         THREE.MathUtils.degToRad(-28)
       );
+      // Pistol grip + trigger + sights: small enough not to fight the
+      // compact SMG silhouette, but enough to stop it reading as a plain
+      // box with a barrel.
+      addBox(gunGroup, gunAccentMaterial, { x: 0.05, y: 0.13, z: 0.06 }, { x: 0, y: -0.1, z: 0.1 }, THREE.MathUtils.degToRad(18));
+      addBox(gunGroup, gunAccentMaterial, { x: 0.018, y: 0.03, z: 0.018 }, { x: 0, y: -0.04, z: 0.06 });
+      addBox(gunGroup, gunMaterial, { x: 0.014, y: 0.03, z: 0.014 }, { x: 0, y: 0.075, z: 0.12 });
+      addBox(gunGroup, gunMaterial, { x: 0.014, y: 0.025, z: 0.014 }, { x: 0, y: 0.07, z: -0.26 });
       break;
 
     case "shotgun":
@@ -161,6 +203,11 @@ function buildGunAssembly(weaponId: WeaponId, gunMaterial: THREE.Material, gunAc
       addBox(gunGroup, gunAccentMaterial, { x: 0.12, y: 0.1, z: 0.16 }, { x: 0, y: -0.04, z: -0.3 });
       addBarrel(gunGroup, gunMaterial, 0.022, 0.38, { x: 0, y: -0.07, z: -0.42 });
       addBox(gunGroup, gunAccentMaterial, { x: 0.1, y: 0.12, z: 0.26 }, { x: 0, y: 0, z: 0.32 });
+      // Pistol grip near the stock junction + trigger + a bead front sight
+      // right at the muzzle.
+      addBox(gunGroup, gunAccentMaterial, { x: 0.06, y: 0.16, z: 0.08 }, { x: 0, y: -0.13, z: 0.14 }, THREE.MathUtils.degToRad(16));
+      addBox(gunGroup, gunAccentMaterial, { x: 0.02, y: 0.035, z: 0.02 }, { x: 0, y: -0.05, z: 0.08 });
+      addBox(gunGroup, gunMaterial, { x: 0.016, y: 0.035, z: 0.016 }, { x: 0, y: 0.075, z: -0.64 });
       break;
 
     case "rifle":
@@ -175,6 +222,13 @@ function buildGunAssembly(weaponId: WeaponId, gunMaterial: THREE.Material, gunAc
         { x: 0, y: -0.15, z: -0.05 },
         THREE.MathUtils.degToRad(-15)
       );
+      // Pistol grip just behind the trigger + trigger nub + front/rear
+      // sight posts for a proper rifle silhouette instead of a plain
+      // body/barrel/stock.
+      addBox(gunGroup, gunAccentMaterial, { x: 0.055, y: 0.17, z: 0.075 }, { x: 0, y: -0.14, z: 0.14 }, THREE.MathUtils.degToRad(20));
+      addBox(gunGroup, gunAccentMaterial, { x: 0.02, y: 0.04, z: 0.02 }, { x: 0, y: -0.055, z: 0.08 });
+      addBox(gunGroup, gunMaterial, { x: 0.016, y: 0.04, z: 0.016 }, { x: 0, y: 0.085, z: 0.16 });
+      addBox(gunGroup, gunMaterial, { x: 0.014, y: 0.035, z: 0.014 }, { x: 0, y: 0.08, z: -0.42 });
       break;
   }
 
@@ -204,11 +258,17 @@ export function buildStandaloneGun(initialWeapon: WeaponId = "rifle"): Standalon
   // at first-person range and camera angle, a purely scene-lit dark gun
   // reads as a near-black silhouette far more often than the third-person
   // rig (which gets seen from many more angles and washes this out).
-  const gunMaterial = new THREE.MeshLambertMaterial({ color: GUN_COLOR, emissive: GUN_COLOR, emissiveIntensity: 0.5 });
+  const gunMaterial = new THREE.MeshLambertMaterial({
+    color: GUN_COLOR,
+    emissive: GUN_COLOR,
+    emissiveIntensity: 0.5,
+    map: getGunMetalTexture(),
+  });
   const gunAccentMaterial = new THREE.MeshLambertMaterial({
     color: GUN_ACCENT_COLOR,
     emissive: GUN_ACCENT_COLOR,
     emissiveIntensity: 0.5,
+    map: getGunMetalTexture(),
   });
   const group = new THREE.Group();
   let currentWeapon = initialWeapon;
@@ -281,8 +341,8 @@ export function buildCharacterModel(initialColor: number, initialWeapon: WeaponI
   const bodyMaterial = new THREE.MeshLambertMaterial({ color: initialColor });
   const gloveMaterial = new THREE.MeshLambertMaterial({ color: darken(initialColor, GLOVE_DARKEN) });
   const helmetMaterial = new THREE.MeshLambertMaterial({ color: HELMET_COLOR });
-  const gunMaterial = new THREE.MeshLambertMaterial({ color: GUN_COLOR });
-  const gunAccentMaterial = new THREE.MeshLambertMaterial({ color: GUN_ACCENT_COLOR });
+  const gunMaterial = new THREE.MeshLambertMaterial({ color: GUN_COLOR, map: getGunMetalTexture() });
+  const gunAccentMaterial = new THREE.MeshLambertMaterial({ color: GUN_ACCENT_COLOR, map: getGunMetalTexture() });
   const flashMaterials = [bodyMaterial, gloveMaterial, helmetMaterial];
 
   const head = new THREE.Mesh(new THREE.SphereGeometry(HEAD_RADIUS, 10, 8), helmetMaterial);
@@ -311,21 +371,36 @@ export function buildCharacterModel(initialColor: number, initialWeapon: WeaponI
   weaponPivot.position.set(0, SHOULDER_Y, 0);
   root.add(weaponPivot);
 
-  function buildArm(side: 1 | -1): THREE.Group {
+  function buildArm(side: 1 | -1): { shoulder: THREE.Group; elbow: THREE.Group } {
     const shoulder = new THREE.Group();
     shoulder.position.set(SHOULDER_X * side, 0, 0);
-    shoulder.rotation.set(ARM_ROTATION_X, 0, ARM_ROTATION_Z_MAG * -side);
-    const segment = buildLimbSegment(ARM_LENGTH, ARM_RADIUS, gloveMaterial);
-    shoulder.add(segment);
+    shoulder.rotation.set(SHOULDER_ROTATION_X, 0, SHOULDER_ROTATION_Z_MAG * -side);
+    const upperArm = buildLimbSegment(UPPER_ARM_LENGTH, UPPER_ARM_RADIUS, gloveMaterial);
+    shoulder.add(upperArm);
+
+    const elbow = new THREE.Group();
+    elbow.position.set(0, -UPPER_ARM_LENGTH, 0);
+    elbow.rotation.x = ELBOW_ROTATION_X;
+    shoulder.add(elbow);
+    const forearm = buildLimbSegment(FOREARM_LENGTH, FOREARM_RADIUS, gloveMaterial);
+    elbow.add(forearm);
+
     const hand = new THREE.Mesh(new THREE.BoxGeometry(HAND_SIZE.x, HAND_SIZE.y, HAND_SIZE.z), gloveMaterial);
-    hand.position.set(0, -ARM_LENGTH, 0);
-    shoulder.add(hand);
+    hand.position.set(0, -FOREARM_LENGTH, 0);
+    elbow.add(hand);
+    // Thumb nub on the outer edge of the hand, roughly where a thumb would
+    // sit wrapped over a grip — cheap detail that keeps the hand box from
+    // reading as a featureless block.
+    const thumb = new THREE.Mesh(new THREE.BoxGeometry(THUMB_SIZE.x, THUMB_SIZE.y, THUMB_SIZE.z), gloveMaterial);
+    thumb.position.set(side * (HAND_SIZE.x / 2 + THUMB_SIZE.x / 2 - 0.01), -FOREARM_LENGTH + 0.02, -0.03);
+    elbow.add(thumb);
+
     weaponPivot.add(shoulder);
-    return shoulder;
+    return { shoulder, elbow };
   }
-  const arms: { shoulder: THREE.Group; side: 1 | -1 }[] = [
-    { shoulder: buildArm(1), side: 1 },
-    { shoulder: buildArm(-1), side: -1 },
+  const arms: { shoulder: THREE.Group; elbow: THREE.Group; side: 1 | -1 }[] = [
+    { ...buildArm(1), side: 1 },
+    { ...buildArm(-1), side: -1 },
   ];
 
   // gunMount stays put at GUN_POSITION for the lifetime of the character;
@@ -382,10 +457,11 @@ export function buildCharacterModel(initialColor: number, initialWeapon: WeaponI
       if (holding === holdingWeapon) return;
       holdingWeapon = holding;
       gunAssembly.visible = holding;
-      // Idle pose: arms hang straight down at the sides instead of
-      // gripping a now-invisible gun.
-      for (const { shoulder, side } of arms) {
-        shoulder.rotation.set(holding ? ARM_ROTATION_X : 0, 0, holding ? ARM_ROTATION_Z_MAG * -side : 0);
+      // Idle pose: arms hang straight down at the sides (shoulder AND
+      // elbow both neutral) instead of gripping a now-invisible gun.
+      for (const { shoulder, elbow, side } of arms) {
+        shoulder.rotation.set(holding ? SHOULDER_ROTATION_X : 0, 0, holding ? SHOULDER_ROTATION_Z_MAG * -side : 0);
+        elbow.rotation.x = holding ? ELBOW_ROTATION_X : 0;
       }
     },
 
